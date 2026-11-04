@@ -5,16 +5,37 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Analisador léxico (lexer).
+/*
+ * Lexer — analisador léxico (primeira fase do compilador).
  *
- * <p>Converte o código-fonte em uma lista de {@link Token tokens}, rastreando
- * linha e coluna de cada token. Erros léxicos são coletados em uma lista e
- * não interrompem a varredura, permitindo reportar múltiplos erros.</p>
+ * O Lexer lê o código-fonte caractere por caractere e agrupa os caracteres em
+ * tokens — as menores unidades com significado. Por exemplo, os caracteres
+ * 'i', 'n', 't', ' ', 'x', ' ', '=', ' ', '5', ';' se tornam os tokens:
+ *   INT  'int'  (linha 1, coluna 1)
+ *   IDENTIFIER 'x'  (linha 1, coluna 5)
+ *   ASSIGN '='  (linha 1, coluna 7)
+ *   NUMBER '5'  (linha 1, coluna 9)
+ *   SEMICOLON ';'  (linha 1, coluna 10)
+ *
+ * Rastreamento de posição:
+ *   - 'line' conta as linhas (incrementa a cada '\n')
+ *   - 'column' conta a coluna dentro da linha atual (reseta para 1 a cada '\n')
+ *   - 'start' e 'startColumn' guardam onde o token atual começou
+ *
+ * Recuperação de erros:
+ *   Em vez de lançar uma exceção e parar na primeira problema, o Lexer registra
+ *   o erro na lista 'errors' e continua lendo. Assim é possível reportar vários
+ *   erros léxicos de uma só vez.
  */
 public class Lexer {
 
-    // --- Mapa de palavras-chave reconhecidas ---
+    /*
+     * KEYWORDS — mapa estático que associa cada palavra reservada ao seu TokenType.
+     *
+     * Quando o Lexer lê uma sequência de letras (ex: "int", "if", "x"), ele consulta
+     * este mapa. Se encontrar, produz o token da palavra reservada correspondente.
+     * Se não encontrar, produz IDENTIFIER (é um nome criado pelo programador).
+     */
     private static final Map<String, TokenType> KEYWORDS = new HashMap<>();
     static {
         KEYWORDS.put("int",     TokenType.INT);
@@ -40,19 +61,22 @@ public class Lexer {
     private final List<Token> tokens = new ArrayList<>();
     private final List<CompilerError> errors = new ArrayList<>();
 
-    private int start = 0;       // índice do início do lexema atual
-    private int current = 0;     // índice do caractere sendo lido
-    private int line = 1;
-    private int column = 1;
-    private int startColumn = 1; // coluna do início do lexema atual
+    private int start = 0;       // índice no source onde o token atual começa
+    private int current = 0;     // índice do próximo caractere a ser lido
+    private int line = 1;        // linha atual (começa em 1)
+    private int column = 1;      // coluna atual (começa em 1, reseta a cada '\n')
+    private int startColumn = 1; // coluna onde o token atual começou
 
     public Lexer(String source) {
         this.source = source;
     }
 
-    /**
-     * Varre o código-fonte inteiro e retorna a lista de tokens produzidos.
-     * Erros léxicos ficam disponíveis em {@link #getErrors()}.
+    /*
+     * scanTokens() — ponto de entrada: varre o código-fonte inteiro.
+     *
+     * A cada iteração, marca o início do próximo token (start, startColumn)
+     * e chama scanToken() para identificar e consumir um token.
+     * Ao terminar, adiciona um token EOF para sinalizar o fim da entrada.
      */
     public List<Token> scanTokens() {
         while (!isAtEnd()) {
@@ -64,25 +88,31 @@ public class Lexer {
         return tokens;
     }
 
-    /** Retorna os erros léxicos encontrados durante a varredura. */
+    // Retorna os erros léxicos coletados durante a varredura.
     public List<CompilerError> getErrors() {
         return errors;
     }
 
     // -------------------------------------------------------------------------
-    // Varredura de tokens
+    // Varredura de um único token
     // -------------------------------------------------------------------------
 
+    /*
+     * scanToken() — lê um caractere e decide qual token produzir.
+     *
+     * Este é o coração do Lexer. Usa um switch no caractere atual para
+     * tratar cada caso: espaços ignorados, delimitadores simples, operadores
+     * que podem ter um ou dois caracteres (=, ==, !=, etc.), comentários,
+     * strings e números.
+     */
     private void scanToken() {
         char c = advance();
         switch (c) {
-            // Espaços em branco — ignorados
-            case ' ', '\r', '\t' -> {}
+            // Espaços em branco não geram tokens — simplesmente ignorados.
+            // A quebra de linha '\n' já foi tratada dentro de advance().
+            case ' ', '\r', '\t', '\n' -> {}
 
-            // Nova linha — advance() já atualizou linha e coluna
-            case '\n' -> {}
-
-            // Delimitadores de um caractere
+            // Delimitadores de um único caractere — cada um gera exatamente um token.
             case '(' -> addToken(TokenType.LPAREN);
             case ')' -> addToken(TokenType.RPAREN);
             case '{' -> addToken(TokenType.LBRACE);
@@ -95,62 +125,85 @@ public class Lexer {
             case '*' -> addToken(TokenType.STAR);
             case '%' -> addToken(TokenType.PERCENT);
 
-            // Operadores de um ou dois caracteres
+            // Operadores que podem ter um ou dois caracteres.
+            // match() consome o próximo caractere apenas se for o esperado.
+            //   '='  sozinho → ASSIGN (atribuição)
+            //   '==' → EQUALS (comparação de igualdade)
             case '=' -> addToken(match('=') ? TokenType.EQUALS       : TokenType.ASSIGN);
             case '!' -> addToken(match('=') ? TokenType.NOT_EQUALS    : TokenType.NOT);
             case '<' -> addToken(match('=') ? TokenType.LESS_EQUAL    : TokenType.LESS);
             case '>' -> addToken(match('=') ? TokenType.GREATER_EQUAL : TokenType.GREATER);
 
+            // '&' sozinho é inválido na linguagem; só aceita '&&'
             case '&' -> {
                 if (match('&')) addToken(TokenType.AND);
                 else lexError("Caractere inesperado: '&' (esperava '&&')");
             }
+            // '|' sozinho é inválido na linguagem; só aceita '||'
             case '|' -> {
                 if (match('|')) addToken(TokenType.OR);
                 else lexError("Caractere inesperado: '|' (esperava '||')");
             }
 
-            // Comentários ou divisão
+            // '/' pode ser divisão, comentário de linha (//) ou bloco (/* */)
             case '/' -> {
-                if (match('/'))      skipLineComment();
+                if      (match('/')) skipLineComment();
                 else if (match('*')) blockComment();
                 else                 addToken(TokenType.SLASH);
             }
 
-            // String literal
+            // Início de string literal
             case '"' -> string();
 
+            // Qualquer outro caractere: número, identificador/palavra-chave ou erro
             default -> {
-                if (isDigit(c))     number();
-                else if (isAlpha(c)) identifier();
+                if      (isDigit(c))  number();
+                else if (isAlpha(c))  identifier();
                 else lexError("Caractere inesperado: '" + c + "'");
             }
         }
     }
 
     // -------------------------------------------------------------------------
-    // Leitura de literais e comentários
+    // Leitura de comentários
     // -------------------------------------------------------------------------
 
-    /** Ignora tudo até o fim da linha (comentário //). */
+    /*
+     * skipLineComment() — ignora tudo até o fim da linha.
+     * Chamado depois de consumir "//".
+     */
     private void skipLineComment() {
         while (peek() != '\n' && !isAtEnd()) advance();
     }
 
-    /** Consome um comentário de bloco (/* ... *\/). Registra erro se não fechado. */
+    /*
+     * blockComment() — ignora tudo até encontrar o fechamento "* /".
+     * Chamado depois de consumir "/*". Se chegar ao fim do arquivo sem fechar,
+     * registra um erro léxico.
+     */
     private void blockComment() {
         while (!(peek() == '*' && peekNext() == '/') && !isAtEnd()) {
-            advance();
+            advance(); // advance() já conta linhas e colunas corretamente
         }
         if (isAtEnd()) {
             lexError("Comentário de bloco não foi fechado");
             return;
         }
-        advance(); // consome '*'
-        advance(); // consome '/'
+        advance(); // consome o '*'
+        advance(); // consome o '/'
     }
 
-    /** Consome uma string literal entre aspas duplas. */
+    // -------------------------------------------------------------------------
+    // Leitura de literais
+    // -------------------------------------------------------------------------
+
+    /*
+     * string() — lê uma string literal entre aspas duplas.
+     *
+     * Consome caracteres até encontrar o fechamento '"'. O valor armazenado
+     * no token é o texto sem as aspas. Se o arquivo terminar antes do '"',
+     * registra um erro léxico.
+     */
     private void string() {
         StringBuilder sb = new StringBuilder();
         while (peek() != '"' && !isAtEnd()) {
@@ -160,14 +213,21 @@ public class Lexer {
             lexError("String não foi fechada");
             return;
         }
-        advance(); // consome a aspas final
-        addToken(TokenType.STRING, sb.toString());
+        advance(); // consome o '"' de fechamento
+        addToken(TokenType.STRING, sb.toString()); // literal = conteúdo sem as aspas
     }
 
-    /** Consome um número inteiro ou decimal. */
+    /*
+     * number() — lê um número inteiro ou decimal.
+     *
+     * Consome dígitos. Se encontrar '.' seguido de dígito, continua consumindo
+     * para tratar números decimais (ex: 3.14). O literal é convertido para
+     * Integer ou Double conforme o caso.
+     */
     private void number() {
         while (isDigit(peek())) advance();
 
+        // Verifica se é um decimal: precisa de '.' seguido de pelo menos um dígito
         boolean isDouble = peek() == '.' && isDigit(peekNext());
         if (isDouble) {
             advance(); // consome o '.'
@@ -179,52 +239,81 @@ public class Lexer {
         else          addToken(TokenType.NUMBER, Integer.parseInt(text));
     }
 
-    /** Consome um identificador ou palavra-chave. */
+    /*
+     * identifier() — lê um identificador ou palavra reservada.
+     *
+     * Consome letras, dígitos e '_' enquanto houver. Depois consulta o mapa
+     * KEYWORDS para ver se o texto é uma palavra reservada (ex: "int", "if")
+     * ou um identificador criado pelo programador (ex: "x", "soma").
+     */
     private void identifier() {
         while (isAlphaNumeric(peek())) advance();
         String text = source.substring(start, current);
+        // Se o texto está no mapa, é palavra reservada; senão, é IDENTIFIER
         TokenType type = KEYWORDS.getOrDefault(text, TokenType.IDENTIFIER);
         addToken(type);
     }
 
     // -------------------------------------------------------------------------
-    // Helpers de leitura
+    // Helpers de leitura (navegação pelo código-fonte)
     // -------------------------------------------------------------------------
 
-    /** Consome o próximo caractere se for igual a {@code expected}. */
+    /*
+     * match() — lê o próximo caractere condicionalmente (look-ahead de 1).
+     *
+     * Se o próximo caractere for igual ao esperado, consome-o e retorna true.
+     * Caso contrário, não avança e retorna false.
+     * Usado para reconhecer operadores de dois caracteres (==, !=, <=, >=, &&, ||).
+     */
     private boolean match(char expected) {
         if (isAtEnd() || source.charAt(current) != expected) return false;
         advance();
         return true;
     }
 
-    /** Retorna o caractere atual sem consumi-lo. */
+    /*
+     * peek() — retorna o caractere atual SEM consumi-lo (look-ahead de 1).
+     * Retorna '\0' se chegou ao fim do arquivo.
+     */
     private char peek() {
         return isAtEnd() ? '\0' : source.charAt(current);
     }
 
-    /** Retorna o próximo caractere (look-ahead de 2) sem consumi-lo. */
+    /*
+     * peekNext() — retorna o caractere SEGUINTE sem consumi-lo (look-ahead de 2).
+     * Usado em number() para saber se o '.' faz parte de um decimal,
+     * e em blockComment() para detectar o fechamento "* /".
+     */
     private char peekNext() {
         return (current + 1 >= source.length()) ? '\0' : source.charAt(current + 1);
     }
 
+    // Verifica se o caractere é um dígito decimal (0–9).
     private boolean isDigit(char c) {
         return c >= '0' && c <= '9';
     }
 
+    // Verifica se o caractere pode iniciar um identificador (letra ou underscore).
     private boolean isAlpha(char c) {
         return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
     }
 
+    // Verifica se o caractere pode continuar um identificador (letra, dígito ou underscore).
     private boolean isAlphaNumeric(char c) {
         return isAlpha(c) || isDigit(c);
     }
 
+    // Verifica se todos os caracteres do código-fonte já foram lidos.
     private boolean isAtEnd() {
         return current >= source.length();
     }
 
-    /** Consome e retorna o caractere atual, atualizando linha e coluna. */
+    /*
+     * advance() — consome e retorna o caractere atual, atualizando a posição.
+     *
+     * É o único lugar onde 'current' é incrementado. Também atualiza 'line'
+     * e 'column': ao encontrar '\n', avança a linha e reseta a coluna para 1.
+     */
     private char advance() {
         char c = source.charAt(current++);
         if (c == '\n') {
@@ -236,16 +325,29 @@ public class Lexer {
         return c;
     }
 
+    // Variante de addToken() sem valor literal (para operadores e delimitadores).
     private void addToken(TokenType type) {
         addToken(type, null);
     }
 
+    /*
+     * addToken() — cria um Token com o texto do lexema atual e o adiciona à lista.
+     *
+     * O lexema é extraído de source usando os índices 'start' e 'current',
+     * que delimitam o trecho de texto que compõe o token.
+     * A coluna usada é 'startColumn' (onde o token começou, não onde terminou).
+     */
     private void addToken(TokenType type, Object literal) {
         String text = source.substring(start, current);
         tokens.add(new Token(type, text, literal, line, startColumn));
     }
 
-    /** Registra um erro léxico na posição do início do lexema atual. */
+    /*
+     * lexError() — registra um erro léxico sem interromper a varredura.
+     *
+     * Em vez de lançar uma exceção, adiciona o erro à lista e continua.
+     * Isso permite que o Lexer encontre e reporte vários erros de uma vez.
+     */
     private void lexError(String message) {
         errors.add(new CompilerError(line, startColumn, message, CompilerError.ErrorType.LEXICAL));
     }

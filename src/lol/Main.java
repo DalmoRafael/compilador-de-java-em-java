@@ -7,26 +7,41 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Ponto de entrada do compilador.
+/*
+ * Main — ponto de entrada do compilador e orquestrador do pipeline.
  *
- * <p>Orquestra o pipeline completo: Lexer → Parser → SemanticAnalyzer,
- * exibe erros no formato javac e imprime a tabela de símbolos e a lista
- * de tokens conforme as alavancas booleanas abaixo.</p>
+ * Um compilador clássico funciona como um pipeline em estágios:
+ *
+ *   Código fonte (texto)
+ *       ↓
+ *   [Lexer]  → Lista de Tokens  +  Erros léxicos
+ *       ↓
+ *   [Parser] → AST (árvore)     +  Erros sintáticos  +  Tabela de Símbolos
+ *       ↓
+ *   [SemanticAnalyzer] → Erros semânticos
+ *       ↓
+ *   Saída: erros formatados, tabela de símbolos, lista de tokens
+ *
+ * Esta classe:
+ *   1. Recebe o código-fonte (de arquivo ou do texto embutido)
+ *   2. Executa o pipeline acima
+ *   3. Coleta e ordena todos os erros (de todas as fases)
+ *   4. Exibe os resultados conforme as alavancas booleanas
+ *
+ * Alavancas (flags) de saída — altere para controlar o que aparece no terminal:
+ *   SHOW_TESTS        → exibe os testes manuais (útil para validar o compilador)
+ *   SHOW_SYMBOL_TABLE → exibe a tabela de símbolos (variáveis declaradas)
+ *   SHOW_TOKENS       → exibe a lista de tokens com prefixos [PR]/[ID]
  */
 public class Main {
 
-    // =========================================================================
-    // Alavancas de saída
-    // =========================================================================
-
-    /** Exibe os 9 testes manuais após o pipeline principal. */
+    // Exibe os 9 testes manuais após o pipeline principal.
     public static boolean SHOW_TESTS = false;
 
-    /** Exibe a tabela de símbolos (ID, Tipo, Nome, Valor). */
+    // Exibe a tabela de símbolos no formato: | ID | Tipo | Nome | Valor |
     public static boolean SHOW_SYMBOL_TABLE = true;
 
-    /** Exibe a lista de tokens com prefixos [PR]/[ID] e referências à tabela. */
+    // Exibe cada token com prefixo [PR] (palavra reservada) ou [ID] (identificador).
     public static boolean SHOW_TOKENS = true;
 
     // =========================================================================
@@ -37,6 +52,8 @@ public class Main {
         String source;
         String fileName = "default";
 
+        // Se um arquivo foi passado como argumento, lê o arquivo.
+        // Caso contrário, usa o código de exemplo embutido abaixo.
         if (args.length > 0) {
             source = new String(Files.readAllBytes(Paths.get(args[0])));
             fileName = args[0];
@@ -74,31 +91,43 @@ public class Main {
     }
 
     // =========================================================================
-    // Pipeline
+    // Pipeline do compilador
     // =========================================================================
 
+    /*
+     * runPipeline() — executa as três fases do compilador em sequência.
+     *
+     * Cada fase produz erros que são acumulados na lista 'allErrors'.
+     * Os erros de todas as fases são ordenados por linha e coluna antes
+     * de serem exibidos, garantindo que apareçam na ordem em que ocorrem
+     * no código-fonte.
+     */
     static void runPipeline(String source, String fileName) {
-        // 1. Análise léxica
+
+        // --- Fase 1: Análise léxica ---
+        // O Lexer lê o texto e produz a lista de tokens.
         Lexer lexer = new Lexer(source);
         List<Token> tokens = lexer.scanTokens();
         List<CompilerError> allErrors = new ArrayList<>(lexer.getErrors());
 
-        // 2. Análise sintática
+        // --- Fase 2: Análise sintática ---
+        // O Parser transforma os tokens em uma AST e popula a tabela de símbolos.
         Parser parser = new Parser(tokens);
         List<Stmt> ast = parser.parse();
         allErrors.addAll(parser.getErrors());
         SymbolTable symbolTable = parser.getSymbolTable();
 
-        // 3. Análise semântica
+        // --- Fase 3: Análise semântica ---
+        // O SemanticAnalyzer verifica regras de tipos, escopos e declarações.
         SemanticAnalyzer analyzer = new SemanticAnalyzer(symbolTable);
         allErrors.addAll(analyzer.analyze(ast));
 
-        // Ordena erros por linha e coluna para exibição consistente
+        // Ordena todos os erros por linha e coluna para exibição na ordem do código
         allErrors.sort((a, b) -> a.line != b.line
                 ? Integer.compare(a.line, b.line)
                 : Integer.compare(a.column, b.column));
 
-        // --- Erros (formato javac) ---
+        // --- Exibição dos erros ---
         if (allErrors.isEmpty()) {
             System.out.println("=== Nenhum erro encontrado ===\n");
         } else {
@@ -107,14 +136,14 @@ public class Main {
             System.out.println();
         }
 
-        // --- Tabela de símbolos ---
+        // --- Exibição da tabela de símbolos (controlada pela alavanca) ---
         if (SHOW_SYMBOL_TABLE) {
             System.out.println("=== TABELA DE SÍMBOLOS ===\n");
             printSymbolTable(symbolTable);
             System.out.println();
         }
 
-        // --- Lista de tokens ---
+        // --- Exibição dos tokens (controlada pela alavanca) ---
         if (SHOW_TOKENS) {
             System.out.println("=== TOKENS ===\n");
             for (Token token : tokens) {
@@ -124,36 +153,45 @@ public class Main {
     }
 
     // =========================================================================
-    // Formatação de saída
+    // Métodos de formatação de saída
     // =========================================================================
 
-    /**
-     * Imprime um erro no formato javac:
-     * <pre>
-     * arquivo:linha:coluna: error: mensagem
-     *     linha do código fonte
-     *     ^
-     * </pre>
+    /*
+     * printError() — imprime um erro no formato do compilador javac.
+     *
+     * Formato:
+     *   arquivo.java:linha:coluna: error: mensagem do erro
+     *       trecho da linha onde o erro ocorreu
+     *       ^
+     *
+     * O acento circunflexo (^) aponta exatamente para a coluna do erro,
+     * igual ao comportamento do javac ao compilar código Java.
      */
     public static void printError(CompilerError error, String source, String fileName) {
         String[] sourceLines = source.split("\n", -1);
+        // Recupera a linha de código onde o erro ocorreu
         String errorLine = (error.line >= 1 && error.line <= sourceLines.length)
                 ? sourceLines[error.line - 1]
                 : "";
 
         System.out.printf("%s:%d:%d: error: %s%n", fileName, error.line, error.column, error.message);
         System.out.println("    " + errorLine);
-
-        // Posiciona o acento circunflexo na coluna do erro
+        // Posiciona o ^ na coluna correta (4 espaços de margem + (coluna-1) espaços)
         System.out.println("    " + " ".repeat(Math.max(0, error.column - 1)) + "^");
         System.out.println();
     }
 
-    /**
-     * Imprime a tabela de símbolos no formato tabular:
-     * <pre>
-     * | ID     | Tipo       | Nome         | Valor        |
-     * </pre>
+    /*
+     * printSymbolTable() — imprime a tabela de símbolos em formato tabular.
+     *
+     * Exibe todos os identificadores declarados no programa na ordem em que
+     * foram criados, com ID, tipo, nome e valor inicial.
+     *
+     * Exemplo:
+     *   | ID     | Tipo       | Nome         | Valor        |
+     *   |--------|------------|--------------|--------------|
+     *   | #1     | INT        | x            | 5            |
+     *   | #2     | INT        | y            | 10           |
      */
     public static void printSymbolTable(SymbolTable symbolTable) {
         List<Symbol> symbols = symbolTable.getAll();
