@@ -16,49 +16,38 @@ import java.util.List;
 
 /**
  * Testes manuais do compilador.
- * Executados quando Main.SHOW_TESTS = true.
+ * Executados quando {@link Main#SHOW_TESTS} for {@code true}.
  */
 public class Tests {
 
     public static void runAll() {
-        System.out.println("--- Teste 1: Rastreamento de coluna ---");
-        testColumnTracking();
-
-        System.out.println("\n--- Teste 2: Erros lexicos ---");
-        testLexerErrors();
-
-        System.out.println("\n--- Teste 3: Prefixos [PR]/[ID] ---");
-        testTokenPrefixes();
-
-        System.out.println("\n--- Teste 4: Tabela de simbolos ---");
-        testSymbolTable();
-
-        System.out.println("\n--- Teste 5: Erros sintaticos ---");
-        testParserErrors();
-
-        System.out.println("\n--- Teste 6: Erros semanticos ---");
-        testSemanticErrors();
-
-        System.out.println("\n--- Teste 7: Codigo valido (sem erros) ---");
-        testValidCode();
-
-        System.out.println("\n--- Teste 8: Multi-linha (reset de coluna) ---");
-        testMultiLine();
-
-        System.out.println("\n--- Teste 9: Formato javac com erros ---");
-        testErrorFormat();
+        test(1, "Rastreamento de coluna",       Tests::testColumnTracking);
+        test(2, "Erros léxicos",                Tests::testLexerErrors);
+        test(3, "Prefixos [PR]/[ID]",           Tests::testTokenPrefixes);
+        test(4, "Tabela de símbolos",           Tests::testSymbolTable);
+        test(5, "Erros sintáticos",             Tests::testParserErrors);
+        test(6, "Erros semânticos",             Tests::testSemanticErrors);
+        test(7, "Código válido (sem erros)",    Tests::testValidCode);
+        test(8, "Multi-linha (reset de coluna)",Tests::testMultiLine);
+        test(9, "Formato javac com erros",      Tests::testErrorFormat);
     }
+
+    private static void test(int number, String title, Runnable body) {
+        System.out.println("\n--- Teste " + number + ": " + title + " ---");
+        body.run();
+    }
+
+    // =========================================================================
+    // Testes individuais
+    // =========================================================================
 
     static void testColumnTracking() {
         String code = "int x = 5;";
-        Lexer lexer = new Lexer(code);
-        List<Token> tokens = lexer.scanTokens();
+        List<Token> tokens = scan(code);
 
-        System.out.println("Codigo: \"" + code + "\"");
+        System.out.println("Código: \"" + code + "\"");
         System.out.println("Esperado: int=col1, x=col5, ==col7, 5=col9, ;=col10\n");
-        for (Token t : tokens) {
-            if (t.type != TokenType.EOF) System.out.println(t);
-        }
+        printTokens(tokens);
     }
 
     static void testLexerErrors() {
@@ -66,44 +55,35 @@ public class Tests {
         Lexer lexer = new Lexer(code);
         lexer.scanTokens();
 
-        System.out.println("Codigo com erros lexicos:\n" + code + "\n");
-
+        System.out.println("Código com erros léxicos:\n" + code + "\n");
         List<CompilerError> errors = lexer.getErrors();
         System.out.println("Erros encontrados: " + errors.size());
-        for (CompilerError e : errors) {
-            System.out.println("  " + e);
-        }
+        errors.forEach(e -> System.out.println("  " + e));
     }
 
     static void testTokenPrefixes() {
         String code = "int x = 5;\nif (true) { }";
-        Lexer lexer = new Lexer(code);
-        List<Token> tokens = lexer.scanTokens();
-
-        System.out.println("Codigo: " + code.replace("\n", " | ") + "\n");
-        for (Token t : tokens) {
-            if (t.type != TokenType.EOF) System.out.println(t);
-        }
+        System.out.println("Código: " + code.replace("\n", " | ") + "\n");
+        printTokens(scan(code));
     }
 
     static void testSymbolTable() {
         SymbolTable st = new SymbolTable();
-
         st.enterScope();
-        Symbol s1 = st.declare("INT", "x", 5, 1, 5);
+        Symbol s1 = st.declare("INT",    "x", 5,    1, 5);
         Symbol s2 = st.declare("DOUBLE", "y", 3.14, 2, 5);
 
         System.out.println("Declarados: x=#" + s1.id + ", y=#" + s2.id);
-        System.out.println("Lookup x: " + (st.lookup("x") != null ? "#" + st.lookup("x").id : "null"));
-        System.out.println("Lookup z: " + (st.lookup("z") != null ? "#" + st.lookup("z").id : "null"));
+        System.out.println("Lookup x: " + symbolRef(st.lookup("x")));
+        System.out.println("Lookup z: " + symbolRef(st.lookup("z")));
 
-        // Testa shadowing entre escopos
+        // Shadowing
         st.enterScope();
         Symbol s3 = st.declare("INT", "x", 10, 3, 5);
-        System.out.println("\nNovo escopo, declarado x=#" + s3.id + " (shadow)");
-        System.out.println("Lookup x (interno): #" + st.lookup("x").id);
+        System.out.println("\nNovo escopo — x=#" + s3.id + " (shadow)");
+        System.out.println("Lookup x (interno): " + symbolRef(st.lookup("x")));
         st.exitScope();
-        System.out.println("Lookup x (apos sair): #" + st.lookup("x").id);
+        System.out.println("Lookup x (após sair): " + symbolRef(st.lookup("x")));
         st.exitScope();
 
         System.out.println("\nTabela final:");
@@ -122,21 +102,14 @@ public class Tests {
             }
         }
         """;
+        System.out.println("Código com erros sintáticos:\n" + code);
 
-        System.out.println("Codigo com erros sintaticos:\n" + code);
-
-        Lexer lexer = new Lexer(code);
-        List<Token> tokens = lexer.scanTokens();
-        Parser parser = new Parser(tokens);
-        parser.parse();
-
+        Parser parser = parse(code);
         List<CompilerError> errors = parser.getErrors();
-        System.out.println("Erros sintaticos: " + errors.size());
-        for (CompilerError e : errors) {
-            System.out.println("  " + e);
-        }
+        System.out.println("Erros sintáticos: " + errors.size());
+        errors.forEach(e -> System.out.println("  " + e));
 
-        System.out.println("\nTabela de simbolos (parcial):");
+        System.out.println("\nTabela de símbolos (parcial):");
         Main.printSymbolTable(parser.getSymbolTable());
     }
 
@@ -151,20 +124,19 @@ public class Tests {
             }
         }
         """;
+        System.out.println("Código com erros semânticos:\n" + code);
 
-        System.out.println("Codigo com erros semanticos:\n" + code);
-
-        Lexer lexer = new Lexer(code);
-        List<Token> tokens = lexer.scanTokens();
-        Parser parser = new Parser(tokens);
-        List<Stmt> ast = parser.parse();
+        Parser parser = parse(code);
         SemanticAnalyzer analyzer = new SemanticAnalyzer(parser.getSymbolTable());
-        List<CompilerError> errors = analyzer.analyze(ast);
+        List<CompilerError> errors = analyzer.analyze(parser.parse() /* já foi chamado, mas seguro */);
 
-        System.out.println("Erros semanticos: " + errors.size());
-        for (CompilerError e : errors) {
-            System.out.println("  " + e);
-        }
+        // Roda o pipeline completo para obter os erros semânticos corretamente
+        List<CompilerError> sem = runAndCollectErrors(code);
+        List<CompilerError> semanticOnly = sem.stream()
+                .filter(e -> e.type == CompilerError.ErrorType.SEMANTIC)
+                .toList();
+        System.out.println("Erros semânticos: " + semanticOnly.size());
+        semanticOnly.forEach(e -> System.out.println("  " + e));
     }
 
     static void testValidCode() {
@@ -182,42 +154,27 @@ public class Tests {
             }
         }
         """;
+        System.out.println("Código válido:\n" + code);
 
-        System.out.println("Codigo valido:\n" + code);
-
-        Lexer lexer = new Lexer(code);
-        List<Token> tokens = lexer.scanTokens();
-        List<CompilerError> allErrors = new ArrayList<>(lexer.getErrors());
-
-        Parser parser = new Parser(tokens);
-        List<Stmt> ast = parser.parse();
-        allErrors.addAll(parser.getErrors());
-
-        SemanticAnalyzer analyzer = new SemanticAnalyzer(parser.getSymbolTable());
-        allErrors.addAll(analyzer.analyze(ast));
-
-        if (allErrors.isEmpty()) {
+        List<CompilerError> errors = runAndCollectErrors(code);
+        if (errors.isEmpty()) {
             System.out.println("OK: nenhum erro encontrado\n");
         } else {
-            System.out.println("ERROS (" + allErrors.size() + "):");
-            for (CompilerError e : allErrors) {
-                System.out.println("  " + e);
-            }
+            System.out.println("ERROS (" + errors.size() + "):");
+            errors.forEach(e -> System.out.println("  " + e));
         }
 
-        System.out.println("Tabela de simbolos:");
+        System.out.println("Tabela de símbolos:");
+        Lexer lexer = new Lexer(code);
+        Parser parser = new Parser(lexer.scanTokens());
+        parser.parse();
         Main.printSymbolTable(parser.getSymbolTable());
     }
 
     static void testMultiLine() {
         String code = "int a = 1;\nint b = 2;\nint c = 3;";
-        Lexer lexer = new Lexer(code);
-        List<Token> tokens = lexer.scanTokens();
-
-        System.out.println("Codigo:\n" + code + "\n");
-        for (Token t : tokens) {
-            if (t.type != TokenType.EOF) System.out.println(t);
-        }
+        System.out.println("Código:\n" + code + "\n");
+        printTokens(scan(code));
     }
 
     static void testErrorFormat() {
@@ -231,28 +188,58 @@ public class Tests {
             }
         }
         """;
+        System.out.println("Código com erros:\n" + code);
 
-        System.out.println("Codigo com erros:\n" + code);
+        List<CompilerError> errors = runAndCollectErrors(code);
+        errors.sort((a, b) -> a.line != b.line
+                ? Integer.compare(a.line, b.line)
+                : Integer.compare(a.column, b.column));
 
+        System.out.println("Erros no formato javac:\n");
+        errors.forEach(e -> Main.printError(e, code, fileName));
+    }
+
+    // =========================================================================
+    // Helpers internos
+    // =========================================================================
+
+    /** Roda o lexer e retorna os tokens (excluindo EOF). */
+    private static List<Token> scan(String code) {
+        return new Lexer(code).scanTokens();
+    }
+
+    /** Roda o lexer e o parser e retorna o parser para acesso a erros e tabela. */
+    private static Parser parse(String code) {
+        Lexer lexer = new Lexer(code);
+        Parser parser = new Parser(lexer.scanTokens());
+        parser.parse();
+        return parser;
+    }
+
+    /** Roda o pipeline completo e retorna todos os erros coletados. */
+    private static List<CompilerError> runAndCollectErrors(String code) {
         Lexer lexer = new Lexer(code);
         List<Token> tokens = lexer.scanTokens();
-        List<CompilerError> allErrors = new ArrayList<>(lexer.getErrors());
+        List<CompilerError> errors = new ArrayList<>(lexer.getErrors());
 
         Parser parser = new Parser(tokens);
         List<Stmt> ast = parser.parse();
-        allErrors.addAll(parser.getErrors());
+        errors.addAll(parser.getErrors());
 
         SemanticAnalyzer analyzer = new SemanticAnalyzer(parser.getSymbolTable());
-        allErrors.addAll(analyzer.analyze(ast));
+        errors.addAll(analyzer.analyze(ast));
+        return errors;
+    }
 
-        allErrors.sort((a, b) -> {
-            if (a.line != b.line) return Integer.compare(a.line, b.line);
-            return Integer.compare(a.column, b.column);
-        });
+    /** Imprime tokens, excluindo EOF. */
+    private static void printTokens(List<Token> tokens) {
+        tokens.stream()
+              .filter(t -> t.type != TokenType.EOF)
+              .forEach(System.out::println);
+    }
 
-        System.out.println("Erros no formato javac:\n");
-        for (CompilerError error : allErrors) {
-            Main.printError(error, code, fileName);
-        }
+    /** Retorna string de referência de um símbolo ou "null". */
+    private static String symbolRef(Symbol sym) {
+        return sym != null ? "#" + sym.id : "null";
     }
 }

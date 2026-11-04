@@ -1,10 +1,16 @@
 package lol;
 
+/**
+ * Representa um erro de compilação com sua posição no código-fonte
+ * (linha e coluna) e o tipo da fase em que foi detectado.
+ */
 public class CompilerError {
+
+    /** Fase do compilador em que o erro foi detectado. */
     public enum ErrorType {
-        LEXICAL("lexico"),
-        SYNTACTIC("sintatico"),
-        SEMANTIC("semantico");
+        LEXICAL("léxico"),
+        SYNTACTIC("sintático"),
+        SEMANTIC("semântico");
 
         public final String label;
 

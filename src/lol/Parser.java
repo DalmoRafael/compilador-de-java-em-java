@@ -4,11 +4,32 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Parser recursive descent com recuperacao de erros (panic mode).
- * Converte uma lista de tokens em uma AST (lista de Stmt.ClassDecl).
- * Popula a tabela de simbolos durante o parsing de declaracoes de variaveis.
+ * Parser recursive descent com recuperação de erros (panic mode).
+ *
+ * <p>Converte a lista de tokens produzida pelo {@link Lexer} em uma AST
+ * (lista de {@link Stmt.ClassDecl}) e popula a {@link SymbolTable} durante
+ * o parsing de declarações de variáveis e parâmetros.</p>
+ *
+ * <p>Erros sintáticos são coletados em uma lista; ao detectar um erro o parser
+ * chama {@link #synchronize()} para descartar tokens até um ponto seguro e
+ * continuar, permitindo reportar múltiplos erros por compilação.</p>
+ *
+ * <p>Gramática suportada (simplificada):</p>
+ * <pre>
+ * program    → classDecl*
+ * classDecl  → modifier* CLASS IDENTIFIER '{' methodDecl* '}'
+ * methodDecl → modifier* type IDENTIFIER '(' params? ')' block
+ * params     → type IDENTIFIER (',' type IDENTIFIER)*
+ * block      → '{' stmt* '}'
+ * stmt       → varDecl | ifStmt | whileStmt | forStmt | returnStmt
+ *            | printStmt | block | exprStmt
+ * varDecl    → type IDENTIFIER ('=' expr)? ';'
+ * expression → assignment → logicOr → logicAnd → equality
+ *            → comparison → term → factor → unary → call → primary
+ * </pre>
  */
 public class Parser {
+
     private final List<Token> tokens;
     private int current = 0;
     private final List<CompilerError> errors = new ArrayList<>();
@@ -18,52 +39,52 @@ public class Parser {
         this.tokens = tokens;
     }
 
+    // =========================================================================
+    // API pública
+    // =========================================================================
+
+    /** Faz o parsing completo e retorna a lista de declarações de classe. */
     public List<Stmt> parse() {
         List<Stmt> statements = new ArrayList<>();
         while (!isAtEnd()) {
-            int startCurrent = current;
+            int before = current;
             Stmt stmt = classDecl();
-            if (stmt != null) {
-                statements.add(stmt);
-            }
-            // Evita loop infinito: se nada foi consumido, avanca
-            if (current == startCurrent) {
-                advance();
-            }
+            if (stmt != null) statements.add(stmt);
+            // Proteção contra loop infinito: se nada foi consumido, avança
+            if (current == before) advance();
         }
         return statements;
     }
 
+    /** Retorna os erros sintáticos coletados durante o parsing. */
     public List<CompilerError> getErrors() {
         return errors;
     }
 
+    /** Retorna a tabela de símbolos populada durante o parsing. */
     public SymbolTable getSymbolTable() {
         return symbolTable;
     }
 
-    // === Declarações ===
+    // =========================================================================
+    // Declarações de alto nível
+    // =========================================================================
 
     private Stmt classDecl() {
         try {
-            // modificadores antes de class (public, static)
-            while (match(TokenType.PUBLIC, TokenType.STATIC)) {}
+            while (match(TokenType.PUBLIC, TokenType.STATIC)) {} // modificadores opcionais
             consume(TokenType.CLASS, "Esperado 'class'");
             Token name = consume(TokenType.IDENTIFIER, "Esperado nome da classe");
             consume(TokenType.LBRACE, "Esperado '{' após nome da classe");
 
             List<Stmt.MethodDecl> methods = new ArrayList<>();
             while (!check(TokenType.RBRACE) && !isAtEnd()) {
-                int startCurrent = current;
+                int before = current;
                 Stmt.MethodDecl method = methodDecl();
-                if (method != null) {
-                    methods.add(method);
-                }
-                if (current == startCurrent) {
-                    advance();
-                }
+                if (method != null) methods.add(method);
+                if (current == before) advance();
             }
-            consume(TokenType.RBRACE, "Esperado '}' apos corpo da classe");
+            consume(TokenType.RBRACE, "Esperado '}' após corpo da classe");
             return new Stmt.ClassDecl(name, methods);
         } catch (ParseError e) {
             synchronize();
@@ -73,37 +94,33 @@ public class Parser {
 
     private Stmt.MethodDecl methodDecl() {
         try {
-            // modificadores
-            while (match(TokenType.PUBLIC, TokenType.STATIC)) {}
+            while (match(TokenType.PUBLIC, TokenType.STATIC)) {} // modificadores opcionais
 
-            // tipo de retorno
-            Token typeToken;
-            if (match(TokenType.INT, TokenType.DOUBLE, TokenType.BOOLEAN, TokenType.VOID)) {
-                typeToken = previous();
-            } else {
-                throw error(peek(), "Esperado tipo de retorno (int, double, boolean ou void), mas encontrou '" + peek().lexeme + "'");
+            // Tipo de retorno
+            if (!match(TokenType.INT, TokenType.DOUBLE, TokenType.BOOLEAN, TokenType.VOID)) {
+                throw error(peek(),
+                        "Esperado tipo de retorno (int, double, boolean ou void), mas encontrou '"
+                        + peek().lexeme + "'");
             }
+            Token typeToken = previous();
             String returnType = typeToken.lexeme.toUpperCase();
 
-            // nome do metodo
             Token name = consume(TokenType.IDENTIFIER, "Esperado nome do método");
-            consume(TokenType.LPAREN, "Esperado '(' apos nome do método");
+            consume(TokenType.LPAREN, "Esperado '(' após nome do método");
 
-            // parametros
+            // Parâmetros — cada parâmetro é registrado no escopo do método
             List<Stmt.Param> params = new ArrayList<>();
-            symbolTable.enterScope(); // escopo do metodo (parametros)
-
+            symbolTable.enterScope();
             if (!check(TokenType.RPAREN)) {
                 do {
-                    Token paramType;
-                    if (match(TokenType.INT, TokenType.DOUBLE, TokenType.BOOLEAN)) {
-                        paramType = previous();
-                    } else {
-                        throw error(peek(), "Esperado tipo do parâmetro (int, double ou boolean), mas encontrou '" + peek().lexeme + "'");
+                    if (!match(TokenType.INT, TokenType.DOUBLE, TokenType.BOOLEAN)) {
+                        throw error(peek(),
+                                "Esperado tipo do parâmetro (int, double ou boolean), mas encontrou '"
+                                + peek().lexeme + "'");
                     }
+                    Token paramType = previous();
                     Token paramName = consume(TokenType.IDENTIFIER, "Esperado nome do parâmetro");
                     params.add(new Stmt.Param(paramType.lexeme.toUpperCase(), paramName));
-                    // Adiciona parametro na tabela de simbolos
                     Symbol sym = symbolTable.declare(
                             paramType.lexeme.toUpperCase(), paramName.lexeme, null,
                             paramName.line, paramName.column);
@@ -112,20 +129,20 @@ public class Parser {
             }
             consume(TokenType.RPAREN, "Esperado ')' após parâmetros");
 
-            // corpo
             Stmt.Block body = block();
+            symbolTable.exitScope();
 
-            symbolTable.exitScope(); // sai do escopo do metodo
-
-            return new Stmt.MethodDecl(name, returnType, params,
-                    body != null ? body.statements : new ArrayList<>(), typeToken);
+            List<Stmt> bodyStmts = body != null ? body.statements : new ArrayList<>();
+            return new Stmt.MethodDecl(name, returnType, params, bodyStmts, typeToken);
         } catch (ParseError e) {
             synchronize();
             return null;
         }
     }
 
-    // === Statements ===
+    // =========================================================================
+    // Comandos (statements)
+    // =========================================================================
 
     private Stmt.Block block() {
         try {
@@ -133,14 +150,10 @@ public class Parser {
             symbolTable.enterScope();
             List<Stmt> statements = new ArrayList<>();
             while (!check(TokenType.RBRACE) && !isAtEnd()) {
-                int startCurrent = current;
+                int before = current;
                 Stmt stmt = statement();
-                if (stmt != null) {
-                    statements.add(stmt);
-                }
-                if (current == startCurrent) {
-                    advance();
-                }
+                if (stmt != null) statements.add(stmt);
+                if (current == before) advance();
             }
             consume(TokenType.RBRACE, "Esperado '}'");
             symbolTable.exitScope();
@@ -153,16 +166,17 @@ public class Parser {
 
     private Stmt statement() {
         try {
-            if (check(TokenType.INT) || check(TokenType.DOUBLE) || check(TokenType.BOOLEAN)) {
-                return varDecl();
-            }
-            // Detecta tipos de Java que nao sao suportados (ex: String, float, long)
+            // Declaração de variável com tipo suportado
+            if (check(TokenType.INT, TokenType.DOUBLE, TokenType.BOOLEAN)) return varDecl();
+
+            // Tipo de Java não suportado (String, float, etc.) — mensagem clara
             if (check(TokenType.IDENTIFIER) && isUnsupportedType(peek().lexeme)) {
                 return unsupportedTypeStmt();
             }
-            if (check(TokenType.IF)) return ifStmt();
-            if (check(TokenType.WHILE)) return whileStmt();
-            if (check(TokenType.FOR)) return forStmt();
+
+            if (check(TokenType.IF))     return ifStmt();
+            if (check(TokenType.WHILE))  return whileStmt();
+            if (check(TokenType.FOR))    return forStmt();
             if (check(TokenType.RETURN)) return returnStmt();
             if (check(TokenType.SYSTEM)) return printStmt();
             if (check(TokenType.LBRACE)) return block();
@@ -174,49 +188,43 @@ public class Parser {
     }
 
     /**
-     * Trata declaracoes com tipos nao suportados (ex: String x = 5; ou String = 5;).
-     * Da uma mensagem clara sobre o tipo nao suportado e se falta o nome da variavel.
+     * Trata declarações com tipos não suportados (ex: {@code String x = 5;}).
+     * Emite uma mensagem clara e descarta tokens até o {@code ;} para não gerar erros em cascata.
      */
     private Stmt unsupportedTypeStmt() {
-        Token typeToken = advance(); // consome o nome do tipo (String, etc.)
+        Token typeToken = advance(); // consome o nome do tipo não suportado
 
         if (check(TokenType.IDENTIFIER)) {
-            // String x = 10; — tipo nao suportado, mas tem nome de variavel
+            // Ex: String x = 10; — tipo errado mas com nome de variável presente
             error(typeToken, "Tipo '" + typeToken.lexeme
                     + "' não é suportado. Tipos suportados: int, double, boolean");
         } else {
-            // String = 10; ou String; — tipo nao suportado e falta o nome da variavel
+            // Ex: String = 10; ou String; — tipo errado e nome ausente
             error(typeToken, "Tipo '" + typeToken.lexeme
                     + "' não é suportado e falta o nome da variável. Ex: int nome = valor");
         }
 
-        // Recupera: pula ate o ';'
-        while (!check(TokenType.SEMICOLON) && !isAtEnd()) {
-            advance();
-        }
-        if (check(TokenType.SEMICOLON)) {
-            advance();
-        }
+        // Recuperação: descarta até o próximo ';'
+        while (!check(TokenType.SEMICOLON) && !isAtEnd()) advance();
+        if (check(TokenType.SEMICOLON)) advance();
         return null;
     }
 
-    /**
-     * Verifica se o lexeme eh um tipo de Java que nao suportamos.
-     */
+    /** Retorna {@code true} se {@code name} é um tipo Java que não suportamos. */
     private boolean isUnsupportedType(String name) {
-        String lower = name.toLowerCase();
-        return lower.equals("string") || lower.equals("float") || lower.equals("long")
-                || lower.equals("char") || lower.equals("byte") || lower.equals("short");
+        return switch (name.toLowerCase()) {
+            case "string", "float", "long", "char", "byte", "short" -> true;
+            default -> false;
+        };
     }
 
     private Stmt.VarDecl varDecl() {
-        Token typeToken;
-        if (match(TokenType.INT, TokenType.DOUBLE, TokenType.BOOLEAN)) {
-            typeToken = previous();
-        } else {
-            throw error(peek(), "Falta o tipo da variável (int, double ou boolean), mas encontrou '" + peek().lexeme + "'");
+        if (!match(TokenType.INT, TokenType.DOUBLE, TokenType.BOOLEAN)) {
+            throw error(peek(),
+                    "Falta o tipo da variável (int, double ou boolean), mas encontrou '"
+                    + peek().lexeme + "'");
         }
-
+        Token typeToken = previous();
         Token name = consume(TokenType.IDENTIFIER, "Esperado nome de variável");
 
         Expr initializer = null;
@@ -225,114 +233,78 @@ public class Parser {
         if (match(TokenType.ASSIGN)) {
             initializer = expression();
         } else if (!check(TokenType.SEMICOLON)) {
-            // Algo diferente de '=' e ';' segue o nome da variavel.
-            // Provavelmente o '=' foi esquecido.
+            // Algo inesperado após o nome — provavelmente faltou o '='
             error(peek(), "Esperado '=' ou ';' após nome de variável");
             hadError = true;
-            // Recupera: pula ate o ';' para nao gerar erros em cascata
-            while (!check(TokenType.SEMICOLON) && !isAtEnd()) {
-                advance();
-            }
+            while (!check(TokenType.SEMICOLON) && !isAtEnd()) advance();
         }
 
-        // Extrai valor do inicializador se for literal
-        Object value = null;
-        if (initializer instanceof Expr.Literal) {
-            value = ((Expr.Literal) initializer).value;
-        }
-
-        // Declara na tabela de simbolos ANTES de checar o ';'.
+        // Registra na tabela de símbolos ANTES do ';' para não perder a declaração
+        Object value = (initializer instanceof Expr.Literal) ? ((Expr.Literal) initializer).value : null;
         Symbol symbol = symbolTable.declare(
-                typeToken.lexeme.toUpperCase(), name.lexeme, value,
-                name.line, name.column);
+                typeToken.lexeme.toUpperCase(), name.lexeme, value, name.line, name.column);
         name.symbolId = symbol.id;
 
-        // Consome o ';'
-        if (hadError) {
-            // Ja reportamos o erro acima; so consome o ';' se existir
-            if (check(TokenType.SEMICOLON)) {
-                advance();
-            }
-        } else {
-            expectSemicolon("Esperado ';'");
-        }
+        // Consome o ';' (já reportamos o erro acima se hadError == true)
+        if (hadError) { if (check(TokenType.SEMICOLON)) advance(); }
+        else          { expectSemicolon("Esperado ';'"); }
 
         return new Stmt.VarDecl(typeToken.lexeme.toUpperCase(), name, initializer, typeToken);
     }
 
     private Stmt ifStmt() {
-        consume(TokenType.IF, "Esperado 'if'");
+        consume(TokenType.IF,     "Esperado 'if'");
         consume(TokenType.LPAREN, "Esperado '(' após 'if'");
         Expr condition = expression();
         consume(TokenType.RPAREN, "Esperado ')' após condição do if");
         Stmt thenBranch = statement();
-        Stmt elseBranch = null;
-        if (match(TokenType.ELSE)) {
-            elseBranch = statement();
-        }
+        Stmt elseBranch = match(TokenType.ELSE) ? statement() : null;
         return new Stmt.If(condition, thenBranch, elseBranch);
     }
 
     private Stmt whileStmt() {
-        consume(TokenType.WHILE, "Esperado 'while'");
+        consume(TokenType.WHILE,  "Esperado 'while'");
         consume(TokenType.LPAREN, "Esperado '(' após 'while'");
         Expr condition = expression();
         consume(TokenType.RPAREN, "Esperado ')' após condição do while");
-        Stmt body = statement();
-        return new Stmt.While(condition, body);
+        return new Stmt.While(condition, statement());
     }
 
     private Stmt forStmt() {
-        consume(TokenType.FOR, "Esperado 'for'");
+        consume(TokenType.FOR,    "Esperado 'for'");
         consume(TokenType.LPAREN, "Esperado '(' após 'for'");
 
-        // init: varDecl, exprStmt, ou apenas ';'
+        // Inicialização: varDecl, exprStmt ou ';' vazio
         Stmt init = null;
-        if (check(TokenType.SEMICOLON)) {
-            advance();
-        } else if (check(TokenType.INT, TokenType.DOUBLE, TokenType.BOOLEAN)) {
-            init = varDecl();
-        } else {
-            init = exprStmt();
-        }
+        if      (check(TokenType.SEMICOLON))                              advance();
+        else if (check(TokenType.INT, TokenType.DOUBLE, TokenType.BOOLEAN)) init = varDecl();
+        else                                                               init = exprStmt();
 
-        // condicao (opcional)
-        Expr condition = null;
-        if (!check(TokenType.SEMICOLON)) {
-            condition = expression();
-        }
+        Expr condition = check(TokenType.SEMICOLON) ? null : expression();
         consume(TokenType.SEMICOLON, "Esperado ';' após condição do for");
 
-        // incremento (opcional)
-        Expr increment = null;
-        if (!check(TokenType.RPAREN)) {
-            increment = expression();
-        }
+        Expr increment = check(TokenType.RPAREN) ? null : expression();
         consume(TokenType.RPAREN, "Esperado ')' após incremento do for");
 
-        Stmt body = statement();
-        return new Stmt.For(init, condition, increment, body);
+        return new Stmt.For(init, condition, increment, statement());
     }
 
     private Stmt returnStmt() {
         Token keyword = consume(TokenType.RETURN, "Esperado 'return'");
-        Expr value = null;
-        if (!check(TokenType.SEMICOLON)) {
-            value = expression();
-        }
+        Expr value = check(TokenType.SEMICOLON) ? null : expression();
         expectSemicolon("Esperado ';'");
         return new Stmt.Return(value, keyword);
     }
 
     private Stmt printStmt() {
-        consume(TokenType.SYSTEM, "Esperado 'System'");
-        consume(TokenType.DOT, "Esperado '.' após 'System'");
-        consume(TokenType.OUT, "Esperado 'out'");
-        consume(TokenType.DOT, "Esperado '.' após 'out'");
+        consume(TokenType.SYSTEM,    "Esperado 'System'");
+        consume(TokenType.DOT,       "Esperado '.' após 'System'");
+        consume(TokenType.OUT,       "Esperado 'out'");
+        consume(TokenType.DOT,       "Esperado '.' após 'out'");
         Token printlnToken = consume(TokenType.PRINTLN, "Esperado 'println'");
-        consume(TokenType.LPAREN, "Esperado '(' após 'println'");
+        consume(TokenType.LPAREN,    "Esperado '(' após 'println'");
         Expr expr = expression();
-        consume(TokenType.RPAREN, "Esperado ')' após expressao do println");
+        consume(TokenType.RPAREN,    "Esperado ')' após expressão do println");
         expectSemicolon("Esperado ';'");
         return new Stmt.Print(expr, printlnToken);
     }
@@ -343,106 +315,93 @@ public class Parser {
         return new Stmt.ExprStmt(expr);
     }
 
-    // === Expressões (precedência crescente) ===
+    // =========================================================================
+    // Expressões (precedência crescente de cima para baixo)
+    // =========================================================================
 
     private Expr expression() {
         return assignment();
     }
 
+    /** assignment → logicOr ('=' assignment)? */
     private Expr assignment() {
         Expr expr = logicOr();
         if (match(TokenType.ASSIGN)) {
             Token equals = previous();
-            Expr value = assignment(); // associatividade a direita
+            Expr value = assignment(); // associatividade à direita
             if (expr instanceof Expr.Variable) {
-                Token name = ((Expr.Variable) expr).name;
-                return new Expr.Assign(name, value);
+                return new Expr.Assign(((Expr.Variable) expr).name, value);
             }
             error(equals, "Atribuição inválida");
         }
         return expr;
     }
 
+    /** logicOr → logicAnd ('||' logicAnd)* */
     private Expr logicOr() {
-        Expr expr = logicAnd();
-        while (match(TokenType.OR)) {
-            Token operator = previous();
-            Expr right = logicAnd();
-            expr = new Expr.Binary(expr, operator, right);
-        }
-        return expr;
+        return parseBinary(this::logicAnd, TokenType.OR);
     }
 
+    /** logicAnd → equality ('&&' equality)* */
     private Expr logicAnd() {
-        Expr expr = equality();
-        while (match(TokenType.AND)) {
-            Token operator = previous();
-            Expr right = equality();
-            expr = new Expr.Binary(expr, operator, right);
-        }
-        return expr;
+        return parseBinary(this::equality, TokenType.AND);
     }
 
+    /** equality → comparison (('==' | '!=') comparison)* */
     private Expr equality() {
-        Expr expr = comparison();
-        while (match(TokenType.EQUALS, TokenType.NOT_EQUALS)) {
-            Token operator = previous();
-            Expr right = comparison();
-            expr = new Expr.Binary(expr, operator, right);
-        }
-        return expr;
+        return parseBinary(this::comparison, TokenType.EQUALS, TokenType.NOT_EQUALS);
     }
 
+    /** comparison → term (('<' | '<=' | '>' | '>=') term)* */
     private Expr comparison() {
-        Expr expr = term();
-        while (match(TokenType.LESS, TokenType.LESS_EQUAL,
-                       TokenType.GREATER, TokenType.GREATER_EQUAL)) {
-            Token operator = previous();
-            Expr right = term();
-            expr = new Expr.Binary(expr, operator, right);
-        }
-        return expr;
+        return parseBinary(this::term,
+                TokenType.LESS, TokenType.LESS_EQUAL,
+                TokenType.GREATER, TokenType.GREATER_EQUAL);
     }
 
+    /** term → factor (('+' | '-') factor)* */
     private Expr term() {
-        Expr expr = factor();
-        while (match(TokenType.PLUS, TokenType.MINUS)) {
-            Token operator = previous();
-            Expr right = factor();
-            expr = new Expr.Binary(expr, operator, right);
-        }
-        return expr;
+        return parseBinary(this::factor, TokenType.PLUS, TokenType.MINUS);
     }
 
+    /** factor → unary (('*' | '/' | '%') unary)* */
     private Expr factor() {
-        Expr expr = unary();
-        while (match(TokenType.STAR, TokenType.SLASH, TokenType.PERCENT)) {
+        return parseBinary(this::unary, TokenType.STAR, TokenType.SLASH, TokenType.PERCENT);
+    }
+
+    /**
+     * Helper para regras de expressão binárias com left-associatividade.
+     * Elimina a repetição de while + match + new Binary.
+     */
+    @FunctionalInterface
+    private interface ExprSupplier { Expr get(); }
+
+    private Expr parseBinary(ExprSupplier operand, TokenType... ops) {
+        Expr expr = operand.get();
+        while (match(ops)) {
             Token operator = previous();
-            Expr right = unary();
-            expr = new Expr.Binary(expr, operator, right);
+            expr = new Expr.Binary(expr, operator, operand.get());
         }
         return expr;
     }
 
+    /** unary → ('!' | '-') unary | call */
     private Expr unary() {
         if (match(TokenType.NOT, TokenType.MINUS)) {
             Token operator = previous();
-            Expr right = unary();
-            return new Expr.Unary(operator, right);
+            return new Expr.Unary(operator, unary());
         }
         return call();
     }
 
+    /** call → primary ('(' args? ')')? — chamada de método simples */
     private Expr call() {
         Expr expr = primary();
-        // Chamada de metodo direta: identificador(args)
         if (expr instanceof Expr.Variable && match(TokenType.LPAREN)) {
             Token callee = ((Expr.Variable) expr).name;
             List<Expr> args = new ArrayList<>();
             if (!check(TokenType.RPAREN)) {
-                do {
-                    args.add(expression());
-                } while (match(TokenType.COMMA));
+                do { args.add(expression()); } while (match(TokenType.COMMA));
             }
             consume(TokenType.RPAREN, "Esperado ')' após argumentos");
             expr = new Expr.Call(callee, args);
@@ -450,54 +409,57 @@ public class Parser {
         return expr;
     }
 
+    /** primary → NUMBER | STRING | true | false | IDENTIFIER | '(' expr ')' */
     private Expr primary() {
         if (match(TokenType.NUMBER)) {
-            Token token = previous();
-            return new Expr.Literal(token.literal, token);
+            Token t = previous();
+            return new Expr.Literal(t.literal, t);
         }
         if (match(TokenType.STRING)) {
-            Token token = previous();
-            return new Expr.Literal(token.literal, token);
+            Token t = previous();
+            return new Expr.Literal(t.literal, t);
         }
         if (match(TokenType.TRUE)) {
-            Token token = previous();
-            return new Expr.Literal(Boolean.TRUE, token);
+            return new Expr.Literal(Boolean.TRUE, previous());
         }
         if (match(TokenType.FALSE)) {
-            Token token = previous();
-            return new Expr.Literal(Boolean.FALSE, token);
+            return new Expr.Literal(Boolean.FALSE, previous());
         }
         if (match(TokenType.IDENTIFIER)) {
             return new Expr.Variable(previous());
         }
         if (match(TokenType.LPAREN)) {
             Expr expr = expression();
-            consume(TokenType.RPAREN, "Esperado ')' apos expressao");
+            consume(TokenType.RPAREN, "Esperado ')' após expressão");
             return new Expr.Grouping(expr);
         }
-        throw error(peek(), "Esperado expressao, mas encontrou '" + peek().lexeme + "'");
+        throw error(peek(), "Esperado expressão, mas encontrou '" + peek().lexeme + "'");
     }
 
-    // === Helpers ===
+    // =========================================================================
+    // Helpers de consumo de tokens
+    // =========================================================================
 
+    /** Consome o token atual se for do tipo esperado; lança {@link ParseError} caso contrário. */
     private Token consume(TokenType type, String message) {
         if (check(type)) return advance();
         throw error(peek(), message + ", mas encontrou '" + peek().lexeme + "'");
     }
 
     /**
-     * Consome um ';'. Se faltar, registra o erro apontando para o final
-     * do último token (onde o ';' deveria estar), sem lançar excecao.
+     * Consome um {@code ;} sem lançar exceção.
+     * Se faltar, registra o erro apontando para o final do último token
+     * (posição onde o {@code ;} deveria estar).
      */
     private void expectSemicolon(String message) {
         if (check(TokenType.SEMICOLON)) {
             advance();
-        } else {
-            Token last = previous();
-            errors.add(new CompilerError(last.line,
-                    last.column + last.lexeme.length(),
-                    message, CompilerError.ErrorType.SYNTACTIC));
+            return;
         }
+        Token last = previous();
+        errors.add(new CompilerError(
+                last.line, last.column + last.lexeme.length(),
+                message, CompilerError.ErrorType.SYNTACTIC));
     }
 
     private boolean check(TokenType type) {
@@ -505,18 +467,13 @@ public class Parser {
     }
 
     private boolean check(TokenType... types) {
-        for (TokenType type : types) {
-            if (check(type)) return true;
-        }
+        for (TokenType t : types) { if (check(t)) return true; }
         return false;
     }
 
     private boolean match(TokenType... types) {
-        for (TokenType type : types) {
-            if (check(type)) {
-                advance();
-                return true;
-            }
+        for (TokenType t : types) {
+            if (check(t)) { advance(); return true; }
         }
         return false;
     }
@@ -526,18 +483,15 @@ public class Parser {
         return previous();
     }
 
-    private Token peek() {
-        return tokens.get(current);
-    }
+    private Token peek()     { return tokens.get(current); }
+    private Token previous() { return tokens.get(current - 1); }
+    private boolean isAtEnd(){ return peek().type == TokenType.EOF; }
 
-    private Token previous() {
-        return tokens.get(current - 1);
-    }
+    // =========================================================================
+    // Tratamento e recuperação de erros
+    // =========================================================================
 
-    private boolean isAtEnd() {
-        return peek().type == TokenType.EOF;
-    }
-
+    /** Registra um erro sintático e retorna uma {@link ParseError} para ser lançada. */
     private ParseError error(Token token, String message) {
         errors.add(new CompilerError(token.line, token.column, message,
                 CompilerError.ErrorType.SYNTACTIC));
@@ -545,24 +499,25 @@ public class Parser {
     }
 
     /**
-     * Recuperação de erro: descarta tokens ate um ponto de sincronizacao.
+     * Recuperação panic mode: avança até um ponto de sincronização seguro
+     * (início de statement, fechamento de bloco, ou fim de arquivo).
+     *
+     * <p>Não pula o token atual cegamente — ele pode já ser um ponto de
+     * sincronização (ex: {@code int} logo após um {@code ;} ausente).</p>
      */
     private void synchronize() {
-        // Nao pula o token atual cegamente: ele pode ser o inicio de
-        // um novo statement valido (ex: 'int' quando falta um ';').
         while (!isAtEnd()) {
             if (previous().type == TokenType.SEMICOLON) return;
-
             switch (peek().type) {
-                case CLASS: case PUBLIC: case STATIC:
-                case INT: case DOUBLE: case BOOLEAN: case VOID:
-                case IF: case WHILE: case FOR: case RETURN:
-                case RBRACE:
-                    return;
+                case CLASS, PUBLIC, STATIC,
+                     INT, DOUBLE, BOOLEAN, VOID,
+                     IF, WHILE, FOR, RETURN,
+                     RBRACE -> { return; }
             }
             advance();
         }
     }
 
+    /** Exceção interna usada para interromper o parsing ao encontrar um erro sintático. */
     private static class ParseError extends RuntimeException {}
 }

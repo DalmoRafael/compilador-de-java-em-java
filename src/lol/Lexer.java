@@ -1,47 +1,59 @@
 package lol;
 
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Analisador léxico (lexer).
+ *
+ * <p>Converte o código-fonte em uma lista de {@link Token tokens}, rastreando
+ * linha e coluna de cada token. Erros léxicos são coletados em uma lista e
+ * não interrompem a varredura, permitindo reportar múltiplos erros.</p>
+ */
 public class Lexer {
+
+    // --- Mapa de palavras-chave reconhecidas ---
+    private static final Map<String, TokenType> KEYWORDS = new HashMap<>();
+    static {
+        KEYWORDS.put("int",     TokenType.INT);
+        KEYWORDS.put("double",  TokenType.DOUBLE);
+        KEYWORDS.put("boolean", TokenType.BOOLEAN);
+        KEYWORDS.put("void",    TokenType.VOID);
+        KEYWORDS.put("if",      TokenType.IF);
+        KEYWORDS.put("else",    TokenType.ELSE);
+        KEYWORDS.put("while",   TokenType.WHILE);
+        KEYWORDS.put("for",     TokenType.FOR);
+        KEYWORDS.put("true",    TokenType.TRUE);
+        KEYWORDS.put("false",   TokenType.FALSE);
+        KEYWORDS.put("return",  TokenType.RETURN);
+        KEYWORDS.put("class",   TokenType.CLASS);
+        KEYWORDS.put("public",  TokenType.PUBLIC);
+        KEYWORDS.put("static",  TokenType.STATIC);
+        KEYWORDS.put("System",  TokenType.SYSTEM);
+        KEYWORDS.put("out",     TokenType.OUT);
+        KEYWORDS.put("println", TokenType.PRINTLN);
+    }
+
     private final String source;
     private final List<Token> tokens = new ArrayList<>();
     private final List<CompilerError> errors = new ArrayList<>();
 
-    private int start = 0;   // inicio do lexema atual
-    private int current = 0; // posicao atual de leitura
+    private int start = 0;       // índice do início do lexema atual
+    private int current = 0;     // índice do caractere sendo lido
     private int line = 1;
-    private int column = 1;       // coluna atual
-    private int startColumn = 1; // coluna do inicio do lexema atual
-
-    private static final Map<String, TokenType> KEYWORDS = new HashMap<>();
-    static {
-        KEYWORDS.put("int", TokenType.INT);
-        KEYWORDS.put("double", TokenType.DOUBLE);
-        KEYWORDS.put("boolean", TokenType.BOOLEAN);
-        KEYWORDS.put("void", TokenType.VOID);
-        KEYWORDS.put("if", TokenType.IF);
-        KEYWORDS.put("else", TokenType.ELSE);
-        KEYWORDS.put("while", TokenType.WHILE);
-        KEYWORDS.put("for", TokenType.FOR);
-        KEYWORDS.put("true", TokenType.TRUE);
-        KEYWORDS.put("false", TokenType.FALSE);
-        KEYWORDS.put("return", TokenType.RETURN);
-        KEYWORDS.put("class", TokenType.CLASS);
-        KEYWORDS.put("public", TokenType.PUBLIC);
-        KEYWORDS.put("static", TokenType.STATIC);
-        KEYWORDS.put("System", TokenType.SYSTEM);
-        KEYWORDS.put("out", TokenType.OUT);
-        KEYWORDS.put("println", TokenType.PRINTLN);
-    }
+    private int column = 1;
+    private int startColumn = 1; // coluna do início do lexema atual
 
     public Lexer(String source) {
         this.source = source;
     }
 
+    /**
+     * Varre o código-fonte inteiro e retorna a lista de tokens produzidos.
+     * Erros léxicos ficam disponíveis em {@link #getErrors()}.
+     */
     public List<Token> scanTokens() {
         while (!isAtEnd()) {
             start = current;
@@ -52,132 +64,122 @@ public class Lexer {
         return tokens;
     }
 
+    /** Retorna os erros léxicos encontrados durante a varredura. */
     public List<CompilerError> getErrors() {
         return errors;
     }
 
+    // -------------------------------------------------------------------------
+    // Varredura de tokens
+    // -------------------------------------------------------------------------
+
     private void scanToken() {
         char c = advance();
         switch (c) {
-            // espacos em branco: ignora
-            case ' ':
-            case '\r':
-            case '\t':
-                break;
-            case '\n':
-                // advance() ja incrementou line e resetou column
-                break;
+            // Espaços em branco — ignorados
+            case ' ', '\r', '\t' -> {}
 
-            // delimitadores simples
-            case '(': addToken(TokenType.LPAREN); break;
-            case ')': addToken(TokenType.RPAREN); break;
-            case '{': addToken(TokenType.LBRACE); break;
-            case '}': addToken(TokenType.RBRACE); break;
-            case ';': addToken(TokenType.SEMICOLON); break;
-            case ',': addToken(TokenType.COMMA); break;
-            case '.': addToken(TokenType.DOT); break;
-            case '+': addToken(TokenType.PLUS); break;
-            case '-': addToken(TokenType.MINUS); break;
-            case '*': addToken(TokenType.STAR); break;
-            case '%': addToken(TokenType.PERCENT); break;
+            // Nova linha — advance() já atualizou linha e coluna
+            case '\n' -> {}
 
-            case '=':
-                addToken(match('=') ? TokenType.EQUALS : TokenType.ASSIGN);
-                break;
-            case '!':
-                addToken(match('=') ? TokenType.NOT_EQUALS : TokenType.NOT);
-                break;
-            case '<':
-                addToken(match('=') ? TokenType.LESS_EQUAL : TokenType.LESS);
-                break;
-            case '>':
-                addToken(match('=') ? TokenType.GREATER_EQUAL : TokenType.GREATER);
-                break;
-            case '&':
-                if (match('&')) {
-                    addToken(TokenType.AND);
-                } else {
-                    lexError("Caractere inesperado: '&' (esperava '&&')");
-                }
-                break;
-            case '|':
-                if (match('|')) {
-                    addToken(TokenType.OR);
-                } else {
-                    lexError("Caractere inesperado: '|' (esperava '||')");
-                }
-                break;
+            // Delimitadores de um caractere
+            case '(' -> addToken(TokenType.LPAREN);
+            case ')' -> addToken(TokenType.RPAREN);
+            case '{' -> addToken(TokenType.LBRACE);
+            case '}' -> addToken(TokenType.RBRACE);
+            case ';' -> addToken(TokenType.SEMICOLON);
+            case ',' -> addToken(TokenType.COMMA);
+            case '.' -> addToken(TokenType.DOT);
+            case '+' -> addToken(TokenType.PLUS);
+            case '-' -> addToken(TokenType.MINUS);
+            case '*' -> addToken(TokenType.STAR);
+            case '%' -> addToken(TokenType.PERCENT);
 
-            // comentarios ou divisao
-            case '/':
-                if (match('/')) {
-                    // comentario de linha: ignora ate o fim da linha
-                    while (peek() != '\n' && !isAtEnd()) advance();
-                } else if (match('*')) {
-                    blockComment();
-                } else {
-                    addToken(TokenType.SLASH);
-                }
-                break;
+            // Operadores de um ou dois caracteres
+            case '=' -> addToken(match('=') ? TokenType.EQUALS       : TokenType.ASSIGN);
+            case '!' -> addToken(match('=') ? TokenType.NOT_EQUALS    : TokenType.NOT);
+            case '<' -> addToken(match('=') ? TokenType.LESS_EQUAL    : TokenType.LESS);
+            case '>' -> addToken(match('=') ? TokenType.GREATER_EQUAL : TokenType.GREATER);
 
-            case '"':
-                string();
-                break;
+            case '&' -> {
+                if (match('&')) addToken(TokenType.AND);
+                else lexError("Caractere inesperado: '&' (esperava '&&')");
+            }
+            case '|' -> {
+                if (match('|')) addToken(TokenType.OR);
+                else lexError("Caractere inesperado: '|' (esperava '||')");
+            }
 
-            default:
-                if (isDigit(c)) {
-                    number();
-                } else if (isAlpha(c)) {
-                    identifier();
-                } else {
-                    lexError("Caractere inesperado: '" + c + "'");
-                }
+            // Comentários ou divisão
+            case '/' -> {
+                if (match('/'))      skipLineComment();
+                else if (match('*')) blockComment();
+                else                 addToken(TokenType.SLASH);
+            }
+
+            // String literal
+            case '"' -> string();
+
+            default -> {
+                if (isDigit(c))     number();
+                else if (isAlpha(c)) identifier();
+                else lexError("Caractere inesperado: '" + c + "'");
+            }
         }
     }
 
+    // -------------------------------------------------------------------------
+    // Leitura de literais e comentários
+    // -------------------------------------------------------------------------
+
+    /** Ignora tudo até o fim da linha (comentário //). */
+    private void skipLineComment() {
+        while (peek() != '\n' && !isAtEnd()) advance();
+    }
+
+    /** Consome um comentário de bloco (/* ... *\/). Registra erro se não fechado. */
     private void blockComment() {
         while (!(peek() == '*' && peekNext() == '/') && !isAtEnd()) {
-            advance(); // advance() rastreia line e column
+            advance();
         }
         if (isAtEnd()) {
-            lexError("Comentario de bloco nao foi fechado");
+            lexError("Comentário de bloco não foi fechado");
             return;
         }
         advance(); // consome '*'
         advance(); // consome '/'
     }
 
+    /** Consome uma string literal entre aspas duplas. */
     private void string() {
         StringBuilder sb = new StringBuilder();
         while (peek() != '"' && !isAtEnd()) {
-            sb.append(advance()); // advance() rastreia line e column
+            sb.append(advance());
         }
         if (isAtEnd()) {
-            lexError("String nao foi fechada");
+            lexError("String não foi fechada");
             return;
         }
-        advance(); // consome as aspas final
+        advance(); // consome a aspas final
         addToken(TokenType.STRING, sb.toString());
     }
 
+    /** Consome um número inteiro ou decimal. */
     private void number() {
         while (isDigit(peek())) advance();
 
-        boolean isDouble = false;
-        if (peek() == '.' && isDigit(peekNext())) {
-            isDouble = true;
+        boolean isDouble = peek() == '.' && isDigit(peekNext());
+        if (isDouble) {
             advance(); // consome o '.'
             while (isDigit(peek())) advance();
         }
 
         String text = source.substring(start, current);
-        if (isDouble) {
-            addToken(TokenType.NUMBER, Double.parseDouble(text));
-        } else {
-            addToken(TokenType.NUMBER, Integer.parseInt(text));
-        }
+        if (isDouble) addToken(TokenType.NUMBER, Double.parseDouble(text));
+        else          addToken(TokenType.NUMBER, Integer.parseInt(text));
     }
 
+    /** Consome um identificador ou palavra-chave. */
     private void identifier() {
         while (isAlphaNumeric(peek())) advance();
         String text = source.substring(start, current);
@@ -185,22 +187,25 @@ public class Lexer {
         addToken(type);
     }
 
-    // --- helpers ---
+    // -------------------------------------------------------------------------
+    // Helpers de leitura
+    // -------------------------------------------------------------------------
 
+    /** Consome o próximo caractere se for igual a {@code expected}. */
     private boolean match(char expected) {
         if (isAtEnd() || source.charAt(current) != expected) return false;
-        advance(); // usa advance() para rastrear coluna
+        advance();
         return true;
     }
 
+    /** Retorna o caractere atual sem consumi-lo. */
     private char peek() {
-        if (isAtEnd()) return '\0';
-        return source.charAt(current);
+        return isAtEnd() ? '\0' : source.charAt(current);
     }
 
+    /** Retorna o próximo caractere (look-ahead de 2) sem consumi-lo. */
     private char peekNext() {
-        if (current + 1 >= source.length()) return '\0';
-        return source.charAt(current + 1);
+        return (current + 1 >= source.length()) ? '\0' : source.charAt(current + 1);
     }
 
     private boolean isDigit(char c) {
@@ -219,6 +224,7 @@ public class Lexer {
         return current >= source.length();
     }
 
+    /** Consome e retorna o caractere atual, atualizando linha e coluna. */
     private char advance() {
         char c = source.charAt(current++);
         if (c == '\n') {
@@ -239,6 +245,7 @@ public class Lexer {
         tokens.add(new Token(type, text, literal, line, startColumn));
     }
 
+    /** Registra um erro léxico na posição do início do lexema atual. */
     private void lexError(String message) {
         errors.add(new CompilerError(line, startColumn, message, CompilerError.ErrorType.LEXICAL));
     }

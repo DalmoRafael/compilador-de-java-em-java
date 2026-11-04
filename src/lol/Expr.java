@@ -3,19 +3,23 @@ package lol;
 import java.util.List;
 
 /**
- * Classes AST para expressoes.
+ * Nós da AST que representam expressões.
+ *
+ * <p>Cada classe aninhada estática corresponde a uma forma de expressão da
+ * linguagem. A classe base {@code Expr} é abstrata apenas para agrupar os tipos.</p>
  */
 public abstract class Expr {
 
+    /** Operação binária: {@code left op right} (ex: {@code x + y}, {@code a < b}). */
     public static class Binary extends Expr {
         public final Expr left;
         public final Token operator;
         public final Expr right;
 
         public Binary(Expr left, Token operator, Expr right) {
-            this.left = left;
+            this.left     = left;
             this.operator = operator;
-            this.right = right;
+            this.right    = right;
         }
 
         @Override
@@ -24,13 +28,14 @@ public abstract class Expr {
         }
     }
 
+    /** Operação unária: {@code op right} (ex: {@code !flag}, {@code -x}). */
     public static class Unary extends Expr {
         public final Token operator;
         public final Expr right;
 
         public Unary(Token operator, Expr right) {
             this.operator = operator;
-            this.right = right;
+            this.right    = right;
         }
 
         @Override
@@ -39,6 +44,7 @@ public abstract class Expr {
         }
     }
 
+    /** Valor literal: número, string, {@code true} ou {@code false}. */
     public static class Literal extends Expr {
         public final Object value;
         public final Token token;
@@ -54,6 +60,7 @@ public abstract class Expr {
         }
     }
 
+    /** Referência a uma variável declarada (ex: {@code x}). */
     public static class Variable extends Expr {
         public final Token name;
 
@@ -67,12 +74,13 @@ public abstract class Expr {
         }
     }
 
+    /** Atribuição: {@code nome = valor} (ex: {@code x = 5}). */
     public static class Assign extends Expr {
         public final Token name;
         public final Expr value;
 
         public Assign(Token name, Expr value) {
-            this.name = name;
+            this.name  = name;
             this.value = value;
         }
 
@@ -82,6 +90,7 @@ public abstract class Expr {
         }
     }
 
+    /** Expressão entre parênteses (ex: {@code (x + y)}). */
     public static class Grouping extends Expr {
         public final Expr expression;
 
@@ -95,13 +104,14 @@ public abstract class Expr {
         }
     }
 
+    /** Chamada de método: {@code nome(args)} (ex: {@code soma(a, b)}). */
     public static class Call extends Expr {
         public final Token callee;
         public final List<Expr> args;
 
         public Call(Token callee, List<Expr> args) {
             this.callee = callee;
-            this.args = args;
+            this.args   = args;
         }
 
         @Override
@@ -111,8 +121,7 @@ public abstract class Expr {
                 if (i > 0) sb.append(", ");
                 sb.append(args.get(i));
             }
-            sb.append(")");
-            return sb.toString();
+            return sb.append(")").toString();
         }
     }
 }

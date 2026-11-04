@@ -7,16 +7,31 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Ponto de entrada do compilador.
+ *
+ * <p>Orquestra o pipeline completo: Lexer → Parser → SemanticAnalyzer,
+ * exibe erros no formato javac e imprime a tabela de símbolos e a lista
+ * de tokens conforme as alavancas booleanas abaixo.</p>
+ */
 public class Main {
 
-    /** Alavanca para mostrar os testes no terminal. */
+    // =========================================================================
+    // Alavancas de saída
+    // =========================================================================
+
+    /** Exibe os 9 testes manuais após o pipeline principal. */
     public static boolean SHOW_TESTS = false;
 
-    /** Alavanca para mostrar a tabela de simbolos. */
-    public static boolean SHOW_SYMBOL_TABLE = false;
+    /** Exibe a tabela de símbolos (ID, Tipo, Nome, Valor). */
+    public static boolean SHOW_SYMBOL_TABLE = true;
 
-    /** Alavanca para mostrar a lista de tokens. */
-    public static boolean SHOW_TOKENS = false;
+    /** Exibe a lista de tokens com prefixos [PR]/[ID] e referências à tabela. */
+    public static boolean SHOW_TOKENS = true;
+
+    // =========================================================================
+    // Entrada
+    // =========================================================================
 
     public static void main(String[] args) throws Exception {
         String source;
@@ -58,81 +73,88 @@ public class Main {
         }
     }
 
-    // === Pipeline completo ===
+    // =========================================================================
+    // Pipeline
+    // =========================================================================
 
     static void runPipeline(String source, String fileName) {
-        List<CompilerError> allErrors = new ArrayList<>();
-
-        // 1. Lexer
+        // 1. Análise léxica
         Lexer lexer = new Lexer(source);
         List<Token> tokens = lexer.scanTokens();
-        allErrors.addAll(lexer.getErrors());
+        List<CompilerError> allErrors = new ArrayList<>(lexer.getErrors());
 
-        // 2. Parser
+        // 2. Análise sintática
         Parser parser = new Parser(tokens);
         List<Stmt> ast = parser.parse();
         allErrors.addAll(parser.getErrors());
         SymbolTable symbolTable = parser.getSymbolTable();
 
-        // 3. Analise semantica
+        // 3. Análise semântica
         SemanticAnalyzer analyzer = new SemanticAnalyzer(symbolTable);
         allErrors.addAll(analyzer.analyze(ast));
 
-        // Ordena erros por linha e coluna
-        allErrors.sort((a, b) -> {
-            if (a.line != b.line) return Integer.compare(a.line, b.line);
-            return Integer.compare(a.column, b.column);
-        });
+        // Ordena erros por linha e coluna para exibição consistente
+        allErrors.sort((a, b) -> a.line != b.line
+                ? Integer.compare(a.line, b.line)
+                : Integer.compare(a.column, b.column));
 
-        // Imprime erros (formato javac)
-        if (!allErrors.isEmpty()) {
-            System.out.println("=== ERROS ===\n");
-            for (CompilerError error : allErrors) {
-                printError(error, source, fileName);
-            }
-            System.out.println();
-        } else {
+        // --- Erros (formato javac) ---
+        if (allErrors.isEmpty()) {
             System.out.println("=== Nenhum erro encontrado ===\n");
+        } else {
+            System.out.println("=== ERROS ===\n");
+            for (CompilerError error : allErrors) printError(error, source, fileName);
+            System.out.println();
         }
 
-        // Imprime tabela de simbolos
+        // --- Tabela de símbolos ---
         if (SHOW_SYMBOL_TABLE) {
-            System.out.println("=== TABELA DE SIMBOLOS ===\n");
+            System.out.println("=== TABELA DE SÍMBOLOS ===\n");
             printSymbolTable(symbolTable);
             System.out.println();
         }
 
-        // Imprime tokens
+        // --- Lista de tokens ---
         if (SHOW_TOKENS) {
             System.out.println("=== TOKENS ===\n");
             for (Token token : tokens) {
-                if (token.type != TokenType.EOF) {
-                    System.out.println(token);
-                }
+                if (token.type != TokenType.EOF) System.out.println(token);
             }
         }
     }
 
-    // === Formatação de saída ===
+    // =========================================================================
+    // Formatação de saída
+    // =========================================================================
 
+    /**
+     * Imprime um erro no formato javac:
+     * <pre>
+     * arquivo:linha:coluna: error: mensagem
+     *     linha do código fonte
+     *     ^
+     * </pre>
+     */
     public static void printError(CompilerError error, String source, String fileName) {
-        String[] lines = source.split("\n", -1);
-        String errorLine = "";
-        if (error.line >= 1 && error.line <= lines.length) {
-            errorLine = lines[error.line - 1];
-        }
+        String[] sourceLines = source.split("\n", -1);
+        String errorLine = (error.line >= 1 && error.line <= sourceLines.length)
+                ? sourceLines[error.line - 1]
+                : "";
 
         System.out.printf("%s:%d:%d: error: %s%n", fileName, error.line, error.column, error.message);
         System.out.println("    " + errorLine);
-        StringBuilder caret = new StringBuilder("    ");
-        for (int i = 1; i < error.column; i++) {
-            caret.append(" ");
-        }
-        caret.append("^");
-        System.out.println(caret);
+
+        // Posiciona o acento circunflexo na coluna do erro
+        System.out.println("    " + " ".repeat(Math.max(0, error.column - 1)) + "^");
         System.out.println();
     }
 
+    /**
+     * Imprime a tabela de símbolos no formato tabular:
+     * <pre>
+     * | ID     | Tipo       | Nome         | Valor        |
+     * </pre>
+     */
     public static void printSymbolTable(SymbolTable symbolTable) {
         List<Symbol> symbols = symbolTable.getAll();
         if (symbols.isEmpty()) {
@@ -143,9 +165,9 @@ public class Main {
         System.out.printf("| %-6s | %-10s | %-12s | %-12s |%n", "ID", "Tipo", "Nome", "Valor");
         System.out.println("|--------|------------|--------------|--------------|");
         for (Symbol sym : symbols) {
-            String valueStr = sym.value != null ? String.valueOf(sym.value) : "null";
+            String value = sym.value != null ? String.valueOf(sym.value) : "null";
             System.out.printf("| #%-5d | %-10s | %-12s | %-12s |%n",
-                    sym.id, sym.type, sym.name, valueStr);
+                    sym.id, sym.type, sym.name, value);
         }
     }
 }
