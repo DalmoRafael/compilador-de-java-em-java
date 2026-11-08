@@ -1,6 +1,5 @@
 package lol;
 
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -9,6 +8,7 @@ import java.util.Map;
 public class Lexer {
     private final String source;
     private final List<Token> tokens = new ArrayList<>();
+    private final SymbolTable symbolTable = new SymbolTable();
 
     private int start = 0;   // inicio do lexema atual
     private int current = 0; // posicao atual de leitura
@@ -20,6 +20,7 @@ public class Lexer {
         KEYWORDS.put("double", TokenType.DOUBLE);
         KEYWORDS.put("boolean", TokenType.BOOLEAN);
         KEYWORDS.put("void", TokenType.VOID);
+        KEYWORDS.put("String", TokenType.STRING); // Adicionado aqui como palavra-chave/tipo
         KEYWORDS.put("if", TokenType.IF);
         KEYWORDS.put("else", TokenType.ELSE);
         KEYWORDS.put("while", TokenType.WHILE);
@@ -45,10 +46,13 @@ public class Lexer {
         return tokens;
     }
 
+    public SymbolTable getSymbolTable() {
+        return symbolTable;
+    }
+
     private void scanToken() {
         char c = advance();
         switch (c) {
-            // espacos em branco: ignora
             case ' ':
             case '\r':
             case '\t':
@@ -57,11 +61,12 @@ public class Lexer {
                 line++;
                 break;
 
-            // delimitadores simples
             case '(': addToken(TokenType.LPAREN); break;
             case ')': addToken(TokenType.RPAREN); break;
             case '{': addToken(TokenType.LBRACE); break;
             case '}': addToken(TokenType.RBRACE); break;
+            case '[': addToken(TokenType.LBRACKET); break;
+            case ']': addToken(TokenType.RBRACKET); break;
             case ';': addToken(TokenType.SEMICOLON); break;
             case ',': addToken(TokenType.COMMA); break;
             case '.': addToken(TokenType.DOT); break;
@@ -91,10 +96,8 @@ public class Lexer {
                 else throw error("Caractere inesperado: '|' (esperava '||')");
                 break;
 
-            // comentarios ou divisao
             case '/':
                 if (match('/')) {
-                    // comentario de linha: ignora ate o fim da linha
                     while (peek() != '\n' && !isAtEnd()) advance();
                 } else if (match('*')) {
                     blockComment();
@@ -126,8 +129,8 @@ public class Lexer {
         if (isAtEnd()) {
             throw error("Comentario de bloco nao foi fechado");
         }
-        advance(); // consome '*'
-        advance(); // consome '/'
+        advance();
+        advance();
     }
 
     private void string() {
@@ -139,8 +142,8 @@ public class Lexer {
         if (isAtEnd()) {
             throw error("String nao foi fechada");
         }
-        advance(); // consome as aspas final
-        addToken(TokenType.STRING, sb.toString());
+        advance();
+        addToken(TokenType.STRING_LITERAL, sb.toString()); // Usa STRING_LITERAL para o conteúdo entre aspas
     }
 
     private void number() {
@@ -149,7 +152,7 @@ public class Lexer {
         boolean isDouble = false;
         if (peek() == '.' && isDigit(peekNext())) {
             isDouble = true;
-            advance(); // consome o '.'
+            advance();
             while (isDigit(peek())) advance();
         }
 
@@ -165,10 +168,14 @@ public class Lexer {
         while (isAlphaNumeric(peek())) advance();
         String text = source.substring(start, current);
         TokenType type = KEYWORDS.getOrDefault(text, TokenType.IDENTIFIER);
-        addToken(type);
-    }
 
-    // --- helpers ---
+        Integer Index = null;
+        if (type == TokenType.IDENTIFIER) {
+            Index = symbolTable.define(text);
+        }
+
+        addToken(type, null, Index);
+    }
 
     private boolean match(char expected) {
         if (isAtEnd() || source.charAt(current) != expected) return false;
@@ -207,12 +214,16 @@ public class Lexer {
     }
 
     private void addToken(TokenType type) {
-        addToken(type, null);
+        addToken(type, null, null);
     }
 
     private void addToken(TokenType type, Object literal) {
+        addToken(type, literal, null);
+    }
+
+    private void addToken(TokenType type, Object literal, Integer symbolIndex) {
         String text = source.substring(start, current);
-        tokens.add(new Token(type, text, literal, line));
+        tokens.add(new Token(type, text, literal, line, symbolIndex));
     }
 
     private RuntimeException error(String message) {

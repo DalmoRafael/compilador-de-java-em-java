@@ -3,16 +3,15 @@ package lol;
 public enum TokenType {
     // Literais
     NUMBER,       // 42, 3.14
-    STRING,       // "texto"
+    STRING_LITERAL, // "texto" (renomeado para evitar conflito com a palavra-chave String)
     IDENTIFIER,   // nomes de variaveis, metodos
 
     // Palavras-chave
-    INT, DOUBLE, BOOLEAN, VOID,
+    INT, DOUBLE, BOOLEAN, VOID, STRING, // STRING adicionada aqui como palavra-chave/tipo
     IF, ELSE, WHILE, FOR,
     TRUE, FALSE,
     RETURN,
     CLASS, PUBLIC, STATIC,
-    SYSTEM, OUT, PRINTLN, // tratamento especial pra System.out.println
 
     // Operadores
     PLUS, MINUS, STAR, SLASH, PERCENT,
@@ -25,6 +24,7 @@ public enum TokenType {
     // Delimitadores
     LPAREN, RPAREN,       // ( )
     LBRACE, RBRACE,       // { }
+    LBRACKET, RBRACKET,   // [ ]
     SEMICOLON,            // ;
     COMMA,                // ,
     DOT,                  // .
