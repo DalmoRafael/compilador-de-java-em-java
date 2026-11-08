@@ -30,6 +30,7 @@ public class Tests {
         test(7, "Código válido (sem erros)",    Tests::testValidCode);
         test(8, "Multi-linha (reset de coluna)",Tests::testMultiLine);
         test(9, "Formato javac com erros",      Tests::testErrorFormat);
+        test(10, "Palavras reservadas e System.out.println", Tests::testKeywordsAndPrint);
     }
 
     private static void test(int number, String title, Runnable body) {
@@ -73,14 +74,14 @@ public class Tests {
         Symbol s1 = st.declare("INT",    "x", 5,    1, 5);
         Symbol s2 = st.declare("DOUBLE", "y", 3.14, 2, 5);
 
-        System.out.println("Declarados: x=#" + s1.id + ", y=#" + s2.id);
+        System.out.println("Declarados: x=[" + s1.id + "], y=[" + s2.id + "]");
         System.out.println("Lookup x: " + symbolRef(st.lookup("x")));
         System.out.println("Lookup z: " + symbolRef(st.lookup("z")));
 
         // Shadowing
         st.enterScope();
         Symbol s3 = st.declare("INT", "x", 10, 3, 5);
-        System.out.println("\nNovo escopo — x=#" + s3.id + " (shadow)");
+        System.out.println("\nNovo escopo — x=[" + s3.id + "] (shadow)");
         System.out.println("Lookup x (interno): " + symbolRef(st.lookup("x")));
         st.exitScope();
         System.out.println("Lookup x (após sair): " + symbolRef(st.lookup("x")));
@@ -199,6 +200,36 @@ public class Tests {
         errors.forEach(e -> Main.printError(e, code, fileName));
     }
 
+    static void testKeywordsAndPrint() {
+        String code = """
+        public class Teste {
+            public static void main(String[] args) {
+                String nome = "lol";
+                System.out.println(nome);
+            }
+        }
+        """;
+        System.out.println("Código:\n" + code);
+
+        List<CompilerError> errors = runAndCollectErrors(code);
+        System.out.println("Erros: " + errors.size() + " (esperado: 0)");
+        errors.forEach(e -> System.out.println("  " + e));
+
+        Parser parser = parse(code);
+        System.out.println("\nTabela (System, out e println NÃO devem aparecer):");
+        Main.printSymbolTable(parser.getSymbolTable());
+
+        System.out.println("\nPalavras reservadas reconhecidas: ");
+        String words = "new null this super switch case default break continue do try catch"
+                + " finally throw throws private protected final abstract interface enum"
+                + " extends implements import package float long char byte short String";
+        StringBuilder bad = new StringBuilder();
+        for (Token t : scan(words)) {
+            if (t.type != TokenType.EOF && !TokenType.isKeyword(t.type)) bad.append(t.lexeme).append(' ');
+        }
+        System.out.println(bad.length() == 0 ? "OK: todas viraram [PR]" : "FALHOU: " + bad);
+    }
+
     // =========================================================================
     // Helpers internos
     // =========================================================================
@@ -240,6 +271,6 @@ public class Tests {
 
     /** Retorna string de referência de um símbolo ou "null". */
     private static String symbolRef(Symbol sym) {
-        return sym != null ? "#" + sym.id : "null";
+        return sym != null ? "[" + sym.id + "]" : "null";
     }
 }

@@ -28,11 +28,11 @@ import java.util.Map;
  * Escopos aninhados permitem que variáveis com o mesmo nome existam em
  * blocos diferentes sem conflito (shadowing):
  *
- *   int x = 5;        // escopo externo: x = #1
+ *   int x = 5;        // escopo externo: x = [0]
  *   if (...) {
- *       int x = 10;   // escopo interno: x = #2, "esconde" o #1
+ *       int x = 10;   // escopo interno: x = [1], "esconde" o [0]
  *   }
- *   // aqui x volta a ser #1
+ *   // aqui x volta a ser [0]
  */
 public class SymbolTable {
 
@@ -43,8 +43,8 @@ public class SymbolTable {
     // O topo (peek) é o escopo mais interno.
     private final Deque<Map<String, Symbol>> scopes = new ArrayDeque<>();
 
-    // Contador que gera IDs únicos e sequenciais para cada símbolo
-    private int nextId = 1;
+    // Contador que gera os índices dos símbolos (0, 1, 2, ...), na ordem de declaração
+    private int nextId = 0;
 
     /*
      * Construtor — cria a tabela com um escopo global inicial.
@@ -62,7 +62,12 @@ public class SymbolTable {
      * Retorna o símbolo criado para que o Parser possa associar o ID ao Token.
      */
     public Symbol declare(String type, String name, Object value, int line, int column) {
-        Symbol symbol = new Symbol(nextId++, type, name, value, line, column);
+        return declare(Symbol.Kind.VARIAVEL, type, name, value, line, column);
+    }
+
+    // Versão que informa a categoria do símbolo (classe, método, parâmetro ou variável).
+    public Symbol declare(Symbol.Kind kind, String type, String name, Object value, int line, int column) {
+        Symbol symbol = new Symbol(nextId++, kind, type, name, value, line, column);
         symbols.add(symbol);
         scopes.peek().put(name, symbol);
         return symbol;
@@ -102,10 +107,8 @@ public class SymbolTable {
      * da variável durante a análise de expressões.
      */
     public Symbol getById(int id) {
-        for (Symbol s : symbols) {
-            if (s.id == id) return s;
-        }
-        return null;
+        // O id é a posição do símbolo na lista (0, 1, 2, ...)
+        return (id >= 0 && id < symbols.size()) ? symbols.get(id) : null;
     }
 
     /*

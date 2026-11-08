@@ -49,9 +49,16 @@ public class SemanticAnalyzer {
     // null quando estamos fora de qualquer método.
     private String currentReturnType = null;
 
+    // Métodos declarados no programa (nome → símbolo), para vincular chamadas
+    // à declaração mesmo quando o método é declarado depois do uso.
+    private final Map<String, Symbol> methods = new HashMap<>();
+
     public SemanticAnalyzer(SymbolTable symbolTable) {
         this.symbolTable = symbolTable;
         scopes.push(new HashMap<>()); // escopo global inicial
+        for (Symbol sym : symbolTable.getAll()) {
+            if (sym.kind == Symbol.Kind.METODO) methods.putIfAbsent(sym.name, sym);
+        }
     }
 
     /*
@@ -262,7 +269,11 @@ public class SemanticAnalyzer {
 
         if (expr instanceof Expr.Call) {
             // Analisa os argumentos da chamada para detectar erros dentro deles
-            for (Expr arg : ((Expr.Call) expr).args) analyzeExpr(arg);
+            Expr.Call call = (Expr.Call) expr;
+            for (Expr arg : call.args) analyzeExpr(arg);
+            // Vincula o nome do método chamado ao símbolo da sua declaração (se existir)
+            Symbol method = methods.get(call.callee.lexeme);
+            if (method != null) call.callee.symbolId = method.id;
             return null; // tipo de retorno de chamadas não é rastreado nesta versão
         }
 
@@ -330,6 +341,11 @@ public class SemanticAnalyzer {
                 || op.equals("==") || op.equals("!=")
                 || op.equals("&&") || op.equals("||")) {
             return "BOOLEAN";
+        }
+
+        // Concatenação: "texto" + qualquer coisa resulta em STRING
+        if (op.equals("+") && ("STRING".equals(leftType) || "STRING".equals(rightType))) {
+            return "STRING";
         }
 
         // Aritméticos: DOUBLE se algum operando for DOUBLE (widening), senão INT

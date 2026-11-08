@@ -31,6 +31,7 @@ import java.util.List;
  *   classDecl  → modifier* CLASS IDENTIFIER '{' methodDecl* '}'
  *   methodDecl → modifier* type IDENTIFIER '(' params? ')' block
  *   params     → type IDENTIFIER (',' type IDENTIFIER)*
+ *   type       → (INT | DOUBLE | BOOLEAN | STRING) ('[' ']')*
  *   block      → '{' stmt* '}'
  *   stmt       → varDecl | ifStmt | whileStmt | forStmt | returnStmt
  *              | printStmt | block | exprStmt
@@ -100,8 +101,12 @@ public class Parser {
             while (match(TokenType.PUBLIC, TokenType.STATIC)) {} // consome modificadores opcionais
             consume(TokenType.CLASS, "Esperado 'class'");
             Token name = consume(TokenType.IDENTIFIER, "Esperado nome da classe");
+            // Registra a classe na tabela de símbolos (escopo global)
+            name.symbolId = symbolTable.declare(Symbol.Kind.CLASSE, "CLASS", name.lexeme,
+                    null, name.line, name.column).id;
             consume(TokenType.LBRACE, "Esperado '{' após nome da classe");
 
+            symbolTable.enterScope(); // escopo da classe: seus métodos ficam aqui
             List<Stmt.MethodDecl> methods = new ArrayList<>();
             while (!check(TokenType.RBRACE) && !isAtEnd()) {
                 int before = current;
@@ -110,6 +115,7 @@ public class Parser {
                 if (current == before) advance(); // proteção contra loop infinito
             }
             consume(TokenType.RBRACE, "Esperado '}' após corpo da classe");
+            symbolTable.exitScope();
             return new Stmt.ClassDecl(name, methods);
         } catch (ParseError e) {
             synchronize();
@@ -131,15 +137,18 @@ public class Parser {
             while (match(TokenType.PUBLIC, TokenType.STATIC)) {} // modificadores opcionais
 
             // Tipo de retorno — obrigatório
-            if (!match(TokenType.INT, TokenType.DOUBLE, TokenType.BOOLEAN, TokenType.VOID)) {
+            if (!check(TokenType.VOID) && !isSupportedType(peek().type)) {
                 throw error(peek(),
-                        "Esperado tipo de retorno (int, double, boolean ou void), mas encontrou '"
+                        "Esperado tipo de retorno (int, double, boolean, String ou void), mas encontrou '"
                         + peek().lexeme + "'");
             }
-            Token typeToken = previous();
-            String returnType = typeToken.lexeme.toUpperCase();
+            Token typeToken = peek();
+            String returnType = parseType();
 
             Token name = consume(TokenType.IDENTIFIER, "Esperado nome do método");
+            // Registra o método na tabela de símbolos (escopo da classe)
+            name.symbolId = symbolTable.declare(Symbol.Kind.METODO, returnType, name.lexeme,
+                    null, name.line, name.column).id;
             consume(TokenType.LPAREN, "Esperado '(' após nome do método");
 
             // Parâmetros — cada parâmetro é registrado na tabela de símbolos
@@ -147,17 +156,17 @@ public class Parser {
             symbolTable.enterScope(); // abre escopo do método para os parâmetros
             if (!check(TokenType.RPAREN)) {
                 do {
-                    if (!match(TokenType.INT, TokenType.DOUBLE, TokenType.BOOLEAN)) {
+                    if (!isSupportedType(peek().type)) {
                         throw error(peek(),
-                                "Esperado tipo do parâmetro (int, double ou boolean), mas encontrou '"
+                                "Esperado tipo do parâmetro (int, double, boolean ou String), mas encontrou '"
                                 + peek().lexeme + "'");
                     }
-                    Token paramType = previous();
+                    String paramType = parseType(); // aceita também arrays: String[] args
                     Token paramName = consume(TokenType.IDENTIFIER, "Esperado nome do parâmetro");
-                    params.add(new Stmt.Param(paramType.lexeme.toUpperCase(), paramName));
+                    params.add(new Stmt.Param(paramType, paramName));
                     // Registra o parâmetro na tabela e vincula o ID ao token
-                    Symbol sym = symbolTable.declare(
-                            paramType.lexeme.toUpperCase(), paramName.lexeme, null,
+                    Symbol sym = symbolTable.declare(Symbol.Kind.PARAMETRO,
+                            paramType, paramName.lexeme, null,
                             paramName.line, paramName.column);
                     paramName.symbolId = sym.id;
                 } while (match(TokenType.COMMA)); // continua enquanto houver vírgula
@@ -213,19 +222,17 @@ public class Parser {
      */
     private Stmt statement() {
         try {
-            // Declaração de variável com tipo suportado (int, double, boolean)
-            if (check(TokenType.INT, TokenType.DOUBLE, TokenType.BOOLEAN)) return varDecl();
+            // Declaração de variável com tipo suportado (int, double, boolean, String)
+            if (isSupportedType(peek().type)) return varDecl();
 
-            // Detecta tipos Java não suportados (String, float, etc.) para dar mensagem clara
-            if (check(TokenType.IDENTIFIER) && isUnsupportedType(peek().lexeme)) {
-                return unsupportedTypeStmt();
-            }
+            // Detecta tipos Java não suportados (float, long, etc.) para dar mensagem clara
+            if (isUnsupportedType(peek().type)) return unsupportedTypeStmt();
 
             if (check(TokenType.IF))     return ifStmt();
             if (check(TokenType.WHILE))  return whileStmt();
             if (check(TokenType.FOR))    return forStmt();
             if (check(TokenType.RETURN)) return returnStmt();
-            if (check(TokenType.SYSTEM)) return printStmt();
+            if (isPrintStart())          return printStmt();
             if (check(TokenType.LBRACE)) return block();
             return exprStmt();
         } catch (ParseError e) {
@@ -248,7 +255,7 @@ public class Parser {
         if (check(TokenType.IDENTIFIER)) {
             // Caso: "String x = 10;" — tem nome de variável mas tipo errado
             error(typeToken, "Tipo '" + typeToken.lexeme
-                    + "' não é suportado. Tipos suportados: int, double, boolean");
+                    + "' não é suportado. Tipos suportados: int, double, boolean, String");
         } else {
             // Caso: "String = 10;" ou "String;" — tipo errado e sem nome de variável
             error(typeToken, "Tipo '" + typeToken.lexeme
@@ -265,11 +272,35 @@ public class Parser {
      * isUnsupportedType() — verifica se um nome é um tipo Java que não suportamos.
      * Usado em statement() para reconhecer e tratar esse caso com mensagem clara.
      */
-    private boolean isUnsupportedType(String name) {
-        return switch (name.toLowerCase()) {
-            case "string", "float", "long", "char", "byte", "short" -> true;
+    private boolean isUnsupportedType(TokenType type) {
+        return switch (type) {
+            case FLOAT, LONG, CHAR, BYTE, SHORT -> true;
             default -> false;
         };
+    }
+
+    /*
+     * isSupportedType() — tipos de dados que a linguagem suporta em variáveis e parâmetros.
+     */
+    private boolean isSupportedType(TokenType type) {
+        return type == TokenType.INT || type == TokenType.DOUBLE
+                || type == TokenType.BOOLEAN || type == TokenType.STRING;
+    }
+
+    /*
+     * parseType() — consome um tipo e devolve seu nome em maiúsculas.
+     *
+     * Aceita colchetes depois do tipo para arrays: "String[]" → "STRING[]".
+     * Quem chama já garantiu que o token atual é um tipo (ou void).
+     */
+    private String parseType() {
+        StringBuilder type = new StringBuilder(advance().lexeme.toUpperCase());
+        while (check(TokenType.LBRACKET) && checkNext(TokenType.RBRACKET)) {
+            advance(); // '['
+            advance(); // ']'
+            type.append("[]");
+        }
+        return type.toString();
     }
 
     /*
@@ -286,12 +317,13 @@ public class Parser {
      * o '=' foi esquecido — reporta erro específico e recupera até o ';'.
      */
     private Stmt.VarDecl varDecl() {
-        if (!match(TokenType.INT, TokenType.DOUBLE, TokenType.BOOLEAN)) {
+        if (!isSupportedType(peek().type)) {
             throw error(peek(),
-                    "Falta o tipo da variável (int, double ou boolean), mas encontrou '"
+                    "Falta o tipo da variável (int, double, boolean ou String), mas encontrou '"
                     + peek().lexeme + "'");
         }
-        Token typeToken = previous();
+        Token typeToken = peek();
+        String varType = parseType();
         Token name = consume(TokenType.IDENTIFIER, "Esperado nome de variável");
 
         Expr initializer = null;
@@ -310,15 +342,15 @@ public class Parser {
         // Registra na tabela de símbolos ANTES de consumir o ';'
         // para garantir que a variável existe mesmo se o ';' estiver faltando
         Object value = (initializer instanceof Expr.Literal) ? ((Expr.Literal) initializer).value : null;
-        Symbol symbol = symbolTable.declare(
-                typeToken.lexeme.toUpperCase(), name.lexeme, value, name.line, name.column);
+        Symbol symbol = symbolTable.declare(Symbol.Kind.VARIAVEL,
+                varType, name.lexeme, value, name.line, name.column);
         name.symbolId = symbol.id; // vincula o token da variável ao ID na tabela
 
         // Consome o ';' — se já reportamos erro acima, não reporta de novo
         if (hadError) { if (check(TokenType.SEMICOLON)) advance(); }
         else          { expectSemicolon("Esperado ';'"); }
 
-        return new Stmt.VarDecl(typeToken.lexeme.toUpperCase(), name, initializer, typeToken);
+        return new Stmt.VarDecl(varType, name, initializer, typeToken);
     }
 
     /*
@@ -363,7 +395,7 @@ public class Parser {
         // Inicialização: pode ser declaração, expressão ou vazia
         Stmt init = null;
         if      (check(TokenType.SEMICOLON))                                advance(); // vazia
-        else if (check(TokenType.INT, TokenType.DOUBLE, TokenType.BOOLEAN)) init = varDecl();
+        else if (isSupportedType(peek().type))                              init = varDecl();
         else                                                                 init = exprStmt();
 
         // Condição: opcional — null significa loop infinito
@@ -390,22 +422,41 @@ public class Parser {
     }
 
     /*
+     * isPrintStart() — o próximo comando é System.out.println(...)?
+     *
+     * System, out e println são identificadores comuns (não são palavras
+     * reservadas). O parser reconhece o comando pela sequência
+     * IDENTIFIER("System") DOT IDENTIFIER("out") DOT IDENTIFIER("println").
+     */
+    private boolean isPrintStart() {
+        return check(TokenType.IDENTIFIER) && peek().lexeme.equals("System")
+                && checkNext(TokenType.DOT);
+    }
+
+    /*
      * printStmt() — parseia System.out.println(expressão).
      *
      * System.out.println é tratado como uma construção especial: o parser
      * espera exatamente a sequência "System . out . println ( expr )".
+     * Esses três identificadores não entram na tabela de símbolos.
      */
     private Stmt printStmt() {
-        consume(TokenType.SYSTEM,    "Esperado 'System'");
+        consumeWord("System");
         consume(TokenType.DOT,       "Esperado '.' após 'System'");
-        consume(TokenType.OUT,       "Esperado 'out'");
+        consumeWord("out");
         consume(TokenType.DOT,       "Esperado '.' após 'out'");
-        Token printlnToken = consume(TokenType.PRINTLN, "Esperado 'println'");
+        Token printlnToken = consumeWord("println");
         consume(TokenType.LPAREN,    "Esperado '(' após 'println'");
         Expr expr = expression();
         consume(TokenType.RPAREN,    "Esperado ')' após expressão do println");
         expectSemicolon("Esperado ';'");
         return new Stmt.Print(expr, printlnToken);
+    }
+
+    // Consome um IDENTIFIER cujo texto seja exatamente 'word' (ex: "out", "println").
+    private Token consumeWord(String word) {
+        if (check(TokenType.IDENTIFIER) && peek().lexeme.equals(word)) return advance();
+        throw error(peek(), "Esperado '" + word + "', mas encontrou '" + peek().lexeme + "'");
     }
 
     /*
@@ -578,7 +629,7 @@ public class Parser {
             Token t = previous();
             return new Expr.Literal(t.literal, t); // literal numérico
         }
-        if (match(TokenType.STRING)) {
+        if (match(TokenType.STRING_LITERAL)) {
             Token t = previous();
             return new Expr.Literal(t.literal, t); // literal string
         }
@@ -641,6 +692,11 @@ public class Parser {
      */
     private boolean check(TokenType type) {
         return !isAtEnd() && peek().type == type;
+    }
+
+    // Verifica o tipo do token SEGUINTE ao atual, sem consumir nada (look-ahead de 2).
+    private boolean checkNext(TokenType type) {
+        return current + 1 < tokens.size() && tokens.get(current + 1).type == type;
     }
 
     // Variante que aceita múltiplos tipos — retorna true se qualquer um bater.
@@ -711,7 +767,7 @@ public class Parser {
             if (previous().type == TokenType.SEMICOLON) return;
             switch (peek().type) {
                 case CLASS, PUBLIC, STATIC,
-                     INT, DOUBLE, BOOLEAN, VOID,
+                     INT, DOUBLE, BOOLEAN, STRING, VOID,
                      IF, WHILE, FOR, RETURN,
                      RBRACE -> { return; }
             }

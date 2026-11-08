@@ -13,24 +13,49 @@ package lol;
  *   "5"     → NUMBER     (valor numérico)
  *   "="     → ASSIGN     (operador de atribuição)
  *   "=="    → EQUALS     (operador de comparação)
+ *
+ * Palavras reservadas:
+ *   Cada palavra reservada carrega o seu próprio texto (ex: INT("int")).
+ *   O Lexer monta a tabela de palavras reservadas a partir desses textos,
+ *   então para criar uma nova palavra reservada basta declarar uma nova
+ *   constante aqui — não é preciso mexer em mais nenhum lugar.
+ *
+ *   System, out e println NÃO são palavras reservadas: são identificadores
+ *   comuns (System.out.println vira IDENTIFIER DOT IDENTIFIER DOT IDENTIFIER).
  */
 public enum TokenType {
 
-    // --- Literais ---
-    // Valores que o programador escreve diretamente no código.
-    NUMBER,     // número inteiro ou decimal, ex: 42, 3.14
-    STRING,     // texto entre aspas duplas, ex: "olá"
-    IDENTIFIER, // nome criado pelo programador para variáveis e métodos, ex: x, soma
+    // --- Literais e identificadores ---
+    NUMBER,          // número inteiro ou decimal, ex: 42, 3.14
+    STRING_LITERAL,  // texto entre aspas duplas, ex: "olá"
+    IDENTIFIER,      // nome criado pelo programador (variáveis, métodos, classes)
 
-    // --- Palavras reservadas ---
-    // Palavras que a linguagem reserva para uso próprio; não podem ser
-    // usadas como nomes de variáveis.
-    INT, DOUBLE, BOOLEAN, VOID,   // tipos de dados
-    IF, ELSE, WHILE, FOR,         // estruturas de controle
-    TRUE, FALSE,                  // valores booleanos
-    RETURN,                       // retorno de método
-    CLASS, PUBLIC, STATIC,        // estrutura de classe
-    SYSTEM, OUT, PRINTLN,         // System.out.println tratado como palavras reservadas
+    // --- Palavras reservadas: tipos de dados ---
+    INT("int"), DOUBLE("double"), BOOLEAN("boolean"), VOID("void"),
+    FLOAT("float"), LONG("long"), SHORT("short"), BYTE("byte"), CHAR("char"),
+    STRING("String"),   // tipo String (não é reservada em Java, mas é tratada como tipo aqui)
+
+    // --- Palavras reservadas: valores ---
+    TRUE("true"), FALSE("false"), NULL("null"),
+
+    // --- Palavras reservadas: estruturas de controle ---
+    IF("if"), ELSE("else"),
+    WHILE("while"), DO("do"), FOR("for"),
+    SWITCH("switch"), CASE("case"), DEFAULT("default"),
+    BREAK("break"), CONTINUE("continue"), RETURN("return"),
+    TRY("try"), CATCH("catch"), FINALLY("finally"),
+    THROW("throw"), THROWS("throws"),
+
+    // --- Palavras reservadas: classes e modificadores ---
+    CLASS("class"), INTERFACE("interface"), ENUM("enum"),
+    EXTENDS("extends"), IMPLEMENTS("implements"),
+    PACKAGE("package"), IMPORT("import"),
+    NEW("new"), THIS("this"), SUPER("super"), INSTANCEOF("instanceof"),
+    PUBLIC("public"), PRIVATE("private"), PROTECTED("protected"),
+    STATIC("static"), FINAL("final"), ABSTRACT("abstract"),
+    NATIVE("native"), SYNCHRONIZED("synchronized"), TRANSIENT("transient"),
+    VOLATILE("volatile"), STRICTFP("strictfp"),
+    ASSERT("assert"), CONST("const"), GOTO("goto"),
 
     // --- Operadores ---
     PLUS, MINUS, STAR, SLASH, PERCENT,  // aritméticos:   + - * / %
@@ -41,17 +66,22 @@ public enum TokenType {
     AND, OR, NOT,                       // lógicos:        && || !
 
     // --- Delimitadores ---
-    // Caracteres que delimitam estruturas do código.
-    LPAREN, RPAREN,   // parênteses:    ( )
-    LBRACE, RBRACE,   // chaves:        { }
-    SEMICOLON,        // ponto e vírgula: ;
-    COMMA,            // vírgula:       ,
-    DOT,              // ponto:         .
+    LPAREN, RPAREN,     // parênteses:     ( )
+    LBRACE, RBRACE,     // chaves:         { }
+    LBRACKET, RBRACKET, // colchetes:      [ ]
+    SEMICOLON,          // ponto e vírgula: ;
+    COMMA,              // vírgula:         ,
+    DOT,                // ponto:           .
 
     // --- Marcador de fim de arquivo ---
     // Adicionado artificialmente pelo Lexer para indicar que não há mais tokens.
-    // Permite que o Parser saiba quando parar de ler.
     EOF;
+
+    // Texto da palavra reservada (ex: "int"), ou null se não for palavra reservada.
+    public final String keyword;
+
+    TokenType()               { this.keyword = null; }
+    TokenType(String keyword) { this.keyword = keyword; }
 
     /*
      * isKeyword() — verifica se um tipo de token é uma palavra reservada.
@@ -60,13 +90,6 @@ public enum TokenType {
      * (palavra reservada) ou [ID] (identificador) na saída.
      */
     public static boolean isKeyword(TokenType type) {
-        return switch (type) {
-            case INT, DOUBLE, BOOLEAN, VOID,
-                 IF, ELSE, WHILE, FOR,
-                 TRUE, FALSE, RETURN,
-                 CLASS, PUBLIC, STATIC,
-                 SYSTEM, OUT, PRINTLN -> true;
-            default -> false;
-        };
+        return type.keyword != null;
     }
 }
