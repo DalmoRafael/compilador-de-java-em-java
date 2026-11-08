@@ -31,6 +31,7 @@ public class Lexer {
 
     /*
      * KEYWORDS — mapa estático que associa cada palavra reservada ao seu TokenType.
+     * É preenchido automaticamente a partir de TokenType (campo 'keyword').
      *
      * Quando o Lexer lê uma sequência de letras (ex: "int", "if", "x"), ele consulta
      * este mapa. Se encontrar, produz o token da palavra reservada correspondente.
@@ -38,23 +39,11 @@ public class Lexer {
      */
     private static final Map<String, TokenType> KEYWORDS = new HashMap<>();
     static {
-        KEYWORDS.put("int",     TokenType.INT);
-        KEYWORDS.put("double",  TokenType.DOUBLE);
-        KEYWORDS.put("boolean", TokenType.BOOLEAN);
-        KEYWORDS.put("void",    TokenType.VOID);
-        KEYWORDS.put("if",      TokenType.IF);
-        KEYWORDS.put("else",    TokenType.ELSE);
-        KEYWORDS.put("while",   TokenType.WHILE);
-        KEYWORDS.put("for",     TokenType.FOR);
-        KEYWORDS.put("true",    TokenType.TRUE);
-        KEYWORDS.put("false",   TokenType.FALSE);
-        KEYWORDS.put("return",  TokenType.RETURN);
-        KEYWORDS.put("class",   TokenType.CLASS);
-        KEYWORDS.put("public",  TokenType.PUBLIC);
-        KEYWORDS.put("static",  TokenType.STATIC);
-        KEYWORDS.put("System",  TokenType.SYSTEM);
-        KEYWORDS.put("out",     TokenType.OUT);
-        KEYWORDS.put("println", TokenType.PRINTLN);
+        // Cada palavra reservada declara o seu texto no próprio TokenType;
+        // aqui só montamos o mapa texto → tipo a partir dessas declarações.
+        for (TokenType type : TokenType.values()) {
+            if (type.keyword != null) KEYWORDS.put(type.keyword, type);
+        }
     }
 
     private final String source;
@@ -117,6 +106,8 @@ public class Lexer {
             case ')' -> addToken(TokenType.RPAREN);
             case '{' -> addToken(TokenType.LBRACE);
             case '}' -> addToken(TokenType.RBRACE);
+            case '[' -> addToken(TokenType.LBRACKET);
+            case ']' -> addToken(TokenType.RBRACKET);
             case ';' -> addToken(TokenType.SEMICOLON);
             case ',' -> addToken(TokenType.COMMA);
             case '.' -> addToken(TokenType.DOT);
@@ -214,7 +205,7 @@ public class Lexer {
             return;
         }
         advance(); // consome o '"' de fechamento
-        addToken(TokenType.STRING, sb.toString()); // literal = conteúdo sem as aspas
+        addToken(TokenType.STRING_LITERAL, sb.toString()); // literal = conteúdo sem as aspas
     }
 
     /*
@@ -235,8 +226,16 @@ public class Lexer {
         }
 
         String text = source.substring(start, current);
-        if (isDouble) addToken(TokenType.NUMBER, Double.parseDouble(text));
-        else          addToken(TokenType.NUMBER, Integer.parseInt(text));
+        if (isDouble) {
+            addToken(TokenType.NUMBER, Double.parseDouble(text));
+        } else {
+            try {
+                addToken(TokenType.NUMBER, Integer.parseInt(text));
+            } catch (NumberFormatException e) {
+                lexError("Número inteiro fora do limite: " + text);
+                addToken(TokenType.NUMBER, null); // mantém o token para não gerar erro em cascata no parser
+            }
+        }
     }
 
     /*

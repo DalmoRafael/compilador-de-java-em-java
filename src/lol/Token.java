@@ -14,8 +14,8 @@ package lol;
  *   column  → coluna onde o token começa na linha
  *
  * O campo symbolId é preenchido depois, durante o parsing e a análise semântica,
- * quando o token é um identificador (variável) que existe na tabela de símbolos.
- * Ele serve para vincular cada uso de uma variável à sua entrada na tabela.
+ * quando o token é um identificador (classe, método, parâmetro ou variável) que
+ * existe na tabela de símbolos. Ele guarda o índice do símbolo na tabela.
  */
 public class Token {
 
@@ -47,8 +47,8 @@ public class Token {
      *   sem prefixo → operador, delimitador ou literal
      *
      * Quando um identificador está vinculado à tabela de símbolos (symbolId != null),
-     * mostra "-> #1" em vez de repetir o nome, deixando claro que aquele uso
-     * de variável corresponde à entrada #1 da tabela.
+     * mostra o nome e o índice do símbolo: 'x' [Index: 3]. Identificadores que não
+     * estão na tabela (System, out, println) aparecem só com o nome.
      */
     @Override
     public String toString() {
@@ -59,15 +59,15 @@ public class Token {
             prefix = "[ID] "; // identificador
         }
 
-        // Se o identificador está declarado, mostra referência à tabela de símbolos
-        String body = (type == TokenType.IDENTIFIER && symbolId != null)
-                ? "-> #" + symbolId
-                : "'" + lexeme + "'";
-
-        // Sufixo com o valor convertido, exibido apenas para NUMBER e STRING
+        // Sufixo com o valor convertido, exibido apenas para NUMBER e STRING_LITERAL
         String literalSuffix = literal != null ? " -> " + literal : "";
 
-        return String.format("%s%-15s %s%s (linha %d, coluna %d)",
-                prefix, type, body, literalSuffix, line, column);
+        // Índice na tabela de símbolos, exibido junto do nome do símbolo
+        String indexSuffix = (type == TokenType.IDENTIFIER && symbolId != null)
+                ? " [Index: " + symbolId + "]"
+                : "";
+
+        return String.format("%s%-15s '%s'%s%s (linha %d, coluna %d)",
+                prefix, type, lexeme, literalSuffix, indexSuffix, line, column);
     }
 }

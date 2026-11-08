@@ -30,16 +30,20 @@ import java.util.List;
  *
  * Alavancas (flags) de saída — altere para controlar o que aparece no terminal:
  *   SHOW_TESTS        → exibe os testes manuais (útil para validar o compilador)
- *   SHOW_SYMBOL_TABLE → exibe a tabela de símbolos (variáveis declaradas)
- *   SHOW_TOKENS       → exibe a lista de tokens com prefixos [PR]/[ID]
+ *   SHOW_SYMBOL_TABLE → exibe a tabela de símbolos (índice e nome)
+ *   SHOW_SYMBOL_DETAILS → a tabela também mostra categoria, tipo, valor e linha
+ *   SHOW_TOKENS       → exibe a lista de tokens com prefixos [PR]/[ID] e [Index: n]
  */
 public class Main {
 
     // Exibe os 9 testes manuais após o pipeline principal.
     public static boolean SHOW_TESTS = false;
 
-    // Exibe a tabela de símbolos no formato: | ID | Tipo | Nome | Valor |
+    // Exibe a tabela de símbolos (por padrão, só índice e nome).
     public static boolean SHOW_SYMBOL_TABLE = true;
+
+    // Se true, a tabela de símbolos mostra também categoria, tipo, valor e linha.
+    public static boolean SHOW_SYMBOL_DETAILS = false;
 
     // Exibe cada token com prefixo [PR] (palavra reservada) ou [ID] (identificador).
     public static boolean SHOW_TOKENS = true;
@@ -59,10 +63,12 @@ public class Main {
             fileName = args[0];
         } else {
             source = """
-            public class Main {
-                public static void main() {
+            public class Teste {
+                public static void main(String[] args) {
                     int x = 5;
                     int y = 10;
+                    double media = 3.14;
+                    String nome = "lol";
                     if (x < y) {
                         System.out.println(x + y);
                     } else {
@@ -73,7 +79,7 @@ public class Main {
                     }
                 }
 
-                int soma(int a, int b) {
+                static int soma(int a, int b) {
                     return a + b;
                 }
             }
@@ -136,19 +142,20 @@ public class Main {
             System.out.println();
         }
 
-        // --- Exibição da tabela de símbolos (controlada pela alavanca) ---
-        if (SHOW_SYMBOL_TABLE) {
-            System.out.println("=== TABELA DE SÍMBOLOS ===\n");
-            printSymbolTable(symbolTable);
-            System.out.println();
-        }
-
         // --- Exibição dos tokens (controlada pela alavanca) ---
+        // Cada identificador da tabela mostra o índice do símbolo: 'x' [Index: 3]
         if (SHOW_TOKENS) {
             System.out.println("=== TOKENS ===\n");
             for (Token token : tokens) {
                 if (token.type != TokenType.EOF) System.out.println(token);
             }
+            System.out.println();
+        }
+
+        // --- Exibição da tabela de símbolos (controlada pela alavanca) ---
+        if (SHOW_SYMBOL_TABLE) {
+            System.out.println("=== TABELA DE SÍMBOLOS ===\n");
+            printSymbolTable(symbolTable);
         }
     }
 
@@ -182,16 +189,16 @@ public class Main {
     }
 
     /*
-     * printSymbolTable() — imprime a tabela de símbolos em formato tabular.
+     * printSymbolTable() — imprime a tabela de símbolos.
      *
-     * Exibe todos os identificadores declarados no programa na ordem em que
-     * foram criados, com ID, tipo, nome e valor inicial.
+     * Por padrão mostra só o índice e o nome de cada símbolo (o mesmo índice
+     * que aparece como [Index: n] na lista de tokens):
      *
-     * Exemplo:
-     *   | ID     | Tipo       | Nome         | Valor        |
-     *   |--------|------------|--------------|--------------|
-     *   | #1     | INT        | x            | 5            |
-     *   | #2     | INT        | y            | 10           |
+     *   [0] Teste
+     *   [1] main
+     *   [2] args
+     *
+     * Com SHOW_SYMBOL_DETAILS = true, mostra também categoria, tipo, valor e linha.
      */
     public static void printSymbolTable(SymbolTable symbolTable) {
         List<Symbol> symbols = symbolTable.getAll();
@@ -200,12 +207,22 @@ public class Main {
             return;
         }
 
-        System.out.printf("| %-6s | %-10s | %-12s | %-12s |%n", "ID", "Tipo", "Nome", "Valor");
-        System.out.println("|--------|------------|--------------|--------------|");
+        if (!SHOW_SYMBOL_DETAILS) {
+            System.out.printf("%-7s %s%n", "INDEX", "NOME");
+            System.out.println("-".repeat(24));
+            for (Symbol sym : symbols) {
+                System.out.printf("[%1d]   %s%n", sym.id, sym.name);
+            }
+            return;
+        }
+
+        System.out.printf("%-7s %-10s %-10s %-12s %-10s %s%n",
+                "INDEX", "CATEGORIA", "TIPO", "NOME", "VALOR", "LINHA");
+        System.out.println("-".repeat(62));
         for (Symbol sym : symbols) {
-            String value = sym.value != null ? String.valueOf(sym.value) : "null";
-            System.out.printf("| #%-5d | %-10s | %-12s | %-12s |%n",
-                    sym.id, sym.type, sym.name, value);
+            String value = sym.value != null ? String.valueOf(sym.value) : "-";
+            System.out.printf("[%3d]   %-10s %-10s %-12s %-10s %d%n",
+                    sym.id, sym.kind, sym.type, sym.name, value, sym.line);
         }
     }
 }
