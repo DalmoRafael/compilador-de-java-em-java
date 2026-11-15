@@ -65,8 +65,10 @@ public class Main {
             source = """
             public class Teste {
                 public static void main(String[] args) {
-                    for (int x = 0; x < 100; x++) {
-                        System.out.println(x);
+                    String[] nomes = {"Ana", "Carlos", "Lucas"};
+                    String[] nomess = new String[3];
+                    for (int x = 0; x < 3; x++) {
+                        System.out.println(nomes[x]);
                     }
 
                     for (int i = 100; i > 0; i--) {

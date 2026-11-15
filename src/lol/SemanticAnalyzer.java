@@ -260,6 +260,8 @@ public class SemanticAnalyzer {
         if (expr instanceof Expr.Binary)   return analyzeBinary((Expr.Binary) expr);
         if (expr instanceof Expr.Postfix)  return analyzePostfix((Expr.Postfix) expr);
         if (expr instanceof Expr.Grouping) return analyzeExpr(((Expr.Grouping) expr).expression);
+        if (expr instanceof Expr.ArrayLiteral)  return analyzeArrayLiteral((Expr.ArrayLiteral) expr);
+        if (expr instanceof Expr.ArrayAccess)   return analyzeArrayAccess((Expr.ArrayAccess) expr);
 
         if (expr instanceof Expr.Unary) {
             Expr.Unary un = (Expr.Unary) expr;
@@ -348,6 +350,45 @@ public class SemanticAnalyzer {
                     + " mas '" + expr.operand.lexeme + "' é " + sym.type);
         }
         return sym.type;
+    }
+
+    /*
+     * analyzeArrayLiteral() — analisa um inicializador de array {v1, v2, ...}.
+     *
+     * Analisa cada elemento para detectar erros dentro deles.
+     * Retorna o tipo com [] para indicar que é um array (ex: "STRING[]").
+     * Se o array estiver vazio, retorna null (tipo indeterminado).
+     */
+    private String analyzeArrayLiteral(Expr.ArrayLiteral expr) {
+        String elementType = null;
+        for (Expr element : expr.elements) {
+            String t = analyzeExpr(element);
+            if (elementType == null) elementType = t; // tipo inferido do primeiro elemento
+        }
+        return elementType != null ? elementType + "[]" : null;
+    }
+
+    /*
+     * analyzeArrayAccess() — analisa um acesso por índice: array[index].
+     *
+     * Verifica que o índice seja do tipo INT e que o array tenha sido declarado.
+     * Retorna o tipo base do array (ex: "STRING[]" → "STRING").
+     */
+    private String analyzeArrayAccess(Expr.ArrayAccess expr) {
+        String arrayType = analyzeExpr(expr.array);  // ex: "STRING[]"
+        String indexType = analyzeExpr(expr.index);
+
+        // O índice deve ser inteiro
+        if (indexType != null && !indexType.equals("INT")) {
+            addError(expr.bracket,
+                    "Índice do array deve ser INT, mas foi " + indexType);
+        }
+
+        // Retorna o tipo base: "STRING[]" → "STRING", null se desconhecido
+        if (arrayType != null && arrayType.endsWith("[]")) {
+            return arrayType.substring(0, arrayType.length() - 2);
+        }
+        return null;
     }
 
     /*

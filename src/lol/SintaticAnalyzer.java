@@ -611,6 +611,15 @@ public class SintaticAnalyzer {
             return new Expr.Postfix(operand, op);
         }
 
+        // Acesso a elemento de array: nomes[x]
+        // Pode encadear: matriz[i][j]
+        while (check(TokenType.LBRACKET)) {
+            Token bracket = advance(); // consome '['
+            Expr index = expression();
+            consume(TokenType.RBRACKET, "Esperado ']' após índice do array");
+            expr = new Expr.ArrayAccess(expr, index, bracket);
+        }
+
         // Chamada de método: nome(args)
         if (expr instanceof Expr.Variable && match(TokenType.LPAREN)) {
             Token callee = ((Expr.Variable) expr).name;
@@ -649,8 +658,15 @@ public class SintaticAnalyzer {
         if (match(TokenType.FALSE)) {
             return new Expr.Literal(Boolean.FALSE, previous()); // literal false
         }
+        if (match(TokenType.NULL)) {
+            return new Expr.Literal(null, previous()); // literal null
+        }
         if (match(TokenType.IDENTIFIER)) {
             return new Expr.Variable(previous()); // referência a variável
+        }
+        // Inicializador de array: {"Ana", "Carlos", "Lucas"}
+        if (check(TokenType.LBRACE)) {
+            return arrayLiteral();
         }
         if (match(TokenType.LPAREN)) {
             Expr expr = expression(); // parseia a expressão interna
@@ -658,6 +674,24 @@ public class SintaticAnalyzer {
             return new Expr.Grouping(expr); // expressão agrupada por parênteses
         }
         throw error(peek(), "Esperado expressão, mas encontrou '" + peek().lexeme + "'");
+    }
+
+    /*
+     * arrayLiteral() — parseia um inicializador de array entre chaves.
+     *
+     * Regra: '{' (expression (',' expression)*)? '}'
+     * Exemplo: {"Ana", "Carlos", "Lucas"}  ou  {1, 2, 3}  ou  {}
+     */
+    private Expr arrayLiteral() {
+        Token brace = consume(TokenType.LBRACE, "Esperado '{'");
+        List<Expr> elements = new ArrayList<>();
+        if (!check(TokenType.RBRACE)) {
+            do {
+                elements.add(expression());
+            } while (match(TokenType.COMMA));
+        }
+        consume(TokenType.RBRACE, "Esperado '}' após elementos do array");
+        return new Expr.ArrayLiteral(elements, brace);
     }
 
     // =========================================================================
