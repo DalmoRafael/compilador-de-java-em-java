@@ -1,9 +1,9 @@
 package tests;
 
 import lol.CompilerError;
-import lol.Lexer;
+import lol.LexerAnalyzer;
 import lol.Main;
-import lol.Parser;
+import lol.SintaticAnalyzer;
 import lol.SemanticAnalyzer;
 import lol.Stmt;
 import lol.Symbol;
@@ -53,11 +53,11 @@ public class Tests {
 
     static void testLexerErrors() {
         String code = "int @ x = 5;\n& \n\"string nao fechada";
-        Lexer lexer = new Lexer(code);
-        lexer.scanTokens();
+        LexerAnalyzer lexerAnalyzer = new LexerAnalyzer(code);
+        lexerAnalyzer.scanTokens();
 
         System.out.println("Código com erros léxicos:\n" + code + "\n");
-        List<CompilerError> errors = lexer.getErrors();
+        List<CompilerError> errors = lexerAnalyzer.getErrors();
         System.out.println("Erros encontrados: " + errors.size());
         errors.forEach(e -> System.out.println("  " + e));
     }
@@ -105,13 +105,13 @@ public class Tests {
         """;
         System.out.println("Código com erros sintáticos:\n" + code);
 
-        Parser parser = parse(code);
-        List<CompilerError> errors = parser.getErrors();
+        SintaticAnalyzer sintaticAnalyzer = parse(code);
+        List<CompilerError> errors = sintaticAnalyzer.getErrors();
         System.out.println("Erros sintáticos: " + errors.size());
         errors.forEach(e -> System.out.println("  " + e));
 
         System.out.println("\nTabela de símbolos (parcial):");
-        Main.printSymbolTable(parser.getSymbolTable());
+        Main.printSymbolTable(sintaticAnalyzer.getSymbolTable());
     }
 
     static void testSemanticErrors() {
@@ -127,9 +127,9 @@ public class Tests {
         """;
         System.out.println("Código com erros semânticos:\n" + code);
 
-        Parser parser = parse(code);
-        SemanticAnalyzer analyzer = new SemanticAnalyzer(parser.getSymbolTable());
-        List<CompilerError> errors = analyzer.analyze(parser.parse() /* já foi chamado, mas seguro */);
+        SintaticAnalyzer sintaticAnalyzer = parse(code);
+        SemanticAnalyzer analyzer = new SemanticAnalyzer(sintaticAnalyzer.getSymbolTable());
+        List<CompilerError> errors = analyzer.analyze(sintaticAnalyzer.parse() /* já foi chamado, mas seguro */);
 
         // Roda o pipeline completo para obter os erros semânticos corretamente
         List<CompilerError> sem = runAndCollectErrors(code);
@@ -166,10 +166,10 @@ public class Tests {
         }
 
         System.out.println("Tabela de símbolos:");
-        Lexer lexer = new Lexer(code);
-        Parser parser = new Parser(lexer.scanTokens());
-        parser.parse();
-        Main.printSymbolTable(parser.getSymbolTable());
+        LexerAnalyzer lexerAnalyzer = new LexerAnalyzer(code);
+        SintaticAnalyzer sintaticAnalyzer = new SintaticAnalyzer(lexerAnalyzer.scanTokens());
+        sintaticAnalyzer.parse();
+        Main.printSymbolTable(sintaticAnalyzer.getSymbolTable());
     }
 
     static void testMultiLine() {
@@ -215,9 +215,9 @@ public class Tests {
         System.out.println("Erros: " + errors.size() + " (esperado: 0)");
         errors.forEach(e -> System.out.println("  " + e));
 
-        Parser parser = parse(code);
+        SintaticAnalyzer sintaticAnalyzer = parse(code);
         System.out.println("\nTabela (System, out e println NÃO devem aparecer):");
-        Main.printSymbolTable(parser.getSymbolTable());
+        Main.printSymbolTable(sintaticAnalyzer.getSymbolTable());
 
         System.out.println("\nPalavras reservadas reconhecidas: ");
         String words = "new null this super switch case default break continue do try catch"
@@ -236,28 +236,28 @@ public class Tests {
 
     /** Roda o lexer e retorna os tokens (excluindo EOF). */
     private static List<Token> scan(String code) {
-        return new Lexer(code).scanTokens();
+        return new LexerAnalyzer(code).scanTokens();
     }
 
     /** Roda o lexer e o parser e retorna o parser para acesso a erros e tabela. */
-    private static Parser parse(String code) {
-        Lexer lexer = new Lexer(code);
-        Parser parser = new Parser(lexer.scanTokens());
-        parser.parse();
-        return parser;
+    private static SintaticAnalyzer parse(String code) {
+        LexerAnalyzer lexerAnalyzer = new LexerAnalyzer(code);
+        SintaticAnalyzer sintaticAnalyzer = new SintaticAnalyzer(lexerAnalyzer.scanTokens());
+        sintaticAnalyzer.parse();
+        return sintaticAnalyzer;
     }
 
     /** Roda o pipeline completo e retorna todos os erros coletados. */
     private static List<CompilerError> runAndCollectErrors(String code) {
-        Lexer lexer = new Lexer(code);
-        List<Token> tokens = lexer.scanTokens();
-        List<CompilerError> errors = new ArrayList<>(lexer.getErrors());
+        LexerAnalyzer lexerAnalyzer = new LexerAnalyzer(code);
+        List<Token> tokens = lexerAnalyzer.scanTokens();
+        List<CompilerError> errors = new ArrayList<>(lexerAnalyzer.getErrors());
 
-        Parser parser = new Parser(tokens);
-        List<Stmt> ast = parser.parse();
-        errors.addAll(parser.getErrors());
+        SintaticAnalyzer sintaticAnalyzer = new SintaticAnalyzer(tokens);
+        List<Stmt> ast = sintaticAnalyzer.parse();
+        errors.addAll(sintaticAnalyzer.getErrors());
 
-        SemanticAnalyzer analyzer = new SemanticAnalyzer(parser.getSymbolTable());
+        SemanticAnalyzer analyzer = new SemanticAnalyzer(sintaticAnalyzer.getSymbolTable());
         errors.addAll(analyzer.analyze(ast));
         return errors;
     }

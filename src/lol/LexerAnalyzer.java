@@ -27,7 +27,7 @@ import java.util.Map;
  *   o erro na lista 'errors' e continua lendo. Assim é possível reportar vários
  *   erros léxicos de uma só vez.
  */
-public class Lexer {
+public class LexerAnalyzer {
 
     /*
      * KEYWORDS — mapa estático que associa cada palavra reservada ao seu TokenType.
@@ -56,7 +56,7 @@ public class Lexer {
     private int column = 1;      // coluna atual (começa em 1, reseta a cada '\n')
     private int startColumn = 1; // coluna onde o token atual começou
 
-    public Lexer(String source) {
+    public LexerAnalyzer(String source) {
         this.source = source;
     }
 
@@ -111,8 +111,8 @@ public class Lexer {
             case ';' -> addToken(TokenType.SEMICOLON);
             case ',' -> addToken(TokenType.COMMA);
             case '.' -> addToken(TokenType.DOT);
-            case '+' -> addToken(TokenType.PLUS);
-            case '-' -> addToken(TokenType.MINUS);
+            case '+' -> addToken(match('+') ? TokenType.INCREMENT : TokenType.PLUS);
+            case '-' -> addToken(match('-') ? TokenType.DECREMENT : TokenType.MINUS);
             case '*' -> addToken(TokenType.STAR);
             case '%' -> addToken(TokenType.PERCENT);
 

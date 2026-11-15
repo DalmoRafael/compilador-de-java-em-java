@@ -164,6 +164,119 @@ public abstract class Expr {
     }
 
     /*
+     * NewArray — alocação de array com 'new'.
+     *
+     * Exemplo: new String[3]  ou  new int[10]
+     *
+     * Aloca um array do tipo especificado com o tamanho dado.
+     * O array é inicializado com valores padrão (null para String, 0 para int).
+     *
+     *   elementType → nome do tipo do elemento em maiúsculas, ex: "STRING", "INT"
+     *   size        → expressão que determina o tamanho (ex: Literal(3), Variable(n))
+     *   keyword     → token 'new', guardado para posição em erros
+     */
+    public static class NewArray extends Expr {
+        public final String elementType;
+        public final Expr size;
+        public final Token keyword; // token 'new'
+
+        public NewArray(String elementType, Expr size, Token keyword) {
+            this.elementType = elementType;
+            this.size        = size;
+            this.keyword     = keyword;
+        }
+
+        @Override
+        public String toString() {
+            return "new " + elementType + "[" + size + "]";
+        }
+    }
+
+    /*
+     * ArrayLiteral — inicializador de array com valores entre chaves.
+     *
+     * Exemplo: {"Ana", "Carlos", "Lucas"}
+     *
+     * Usado na declaração: String[] nomes = {"Ana", "Carlos", "Lucas"};
+     * Os elementos são uma lista de expressões de qualquer tipo.
+     *
+     *   elements → lista de expressões que formam o array
+     *   brace    → token '{', guardado para posição em erros
+     */
+    public static class ArrayLiteral extends Expr {
+        public final List<Expr> elements;
+        public final Token brace; // token '{', usado para posição nos erros
+
+        public ArrayLiteral(List<Expr> elements, Token brace) {
+            this.elements = elements;
+            this.brace    = brace;
+        }
+
+        @Override
+        public String toString() {
+            StringBuilder sb = new StringBuilder("{");
+            for (int i = 0; i < elements.size(); i++) {
+                if (i > 0) sb.append(", ");
+                sb.append(elements.get(i));
+            }
+            return sb.append("}").toString();
+        }
+    }
+
+    /*
+     * ArrayAccess — acesso a um elemento de array pelo índice.
+     *
+     * Exemplo: nomes[x]
+     *
+     *   array  → expressão que representa o array (ex: variável "nomes")
+     *   index  → expressão que representa o índice (ex: variável "x", número 0)
+     *   bracket → token '[', guardado para posição em erros
+     */
+    public static class ArrayAccess extends Expr {
+        public final Expr array;
+        public final Expr index;
+        public final Token bracket; // token '[', usado para posição nos erros
+
+        public ArrayAccess(Expr array, Expr index, Token bracket) {
+            this.array   = array;
+            this.index   = index;
+            this.bracket = bracket;
+        }
+
+        @Override
+        public String toString() {
+            return array + "[" + index + "]";
+        }
+    }
+
+    /*
+     * Postfix — operador de pós-fixo aplicado após uma variável.
+     *
+     * Exemplos: x++, i--
+     *
+     * O operador age DEPOIS de a expressão ser avaliada. Ou seja, o valor
+     * atual de x é usado primeiro e depois ele é incrementado/decrementado.
+     * É equivalente a:  x = x + 1  (para ++)  ou  x = x - 1  (para --)
+     *
+     *   operand  → a variável sobre a qual o operador age (ex: token "x")
+     *   operator → token do operador (++ ou --)
+     */
+    public static class Postfix extends Expr {
+        public final Token operand;  // a variável sendo incrementada/decrementada
+        public final Token operator; // token ++ ou --
+
+        public Postfix(Token operand, Token operator) {
+            this.operand  = operand;
+            this.operator = operator;
+        }
+
+        @Override
+        public String toString() {
+            return operand.lexeme + operator.lexeme;
+        }
+    }
+
+    /*
      * Call — chamada de método.
      *
      * Exemplo: soma(a, b)

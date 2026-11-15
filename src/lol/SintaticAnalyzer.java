@@ -29,7 +29,7 @@ import java.util.List;
  * Gramática suportada (simplificada):
  *   program    → classDecl*
  *   classDecl  → modifier* CLASS IDENTIFIER '{' methodDecl* '}'
- *   methodDecl → modifier* type IDENTIFIER '(' params? ')' block
+ *   methodDecl → modifier* (type | VOID) IDENTIFIER '(' params? ')' block
  *   params     → type IDENTIFIER (',' type IDENTIFIER)*
  *   type       → (INT | DOUBLE | BOOLEAN | STRING) ('[' ']')*
  *   block      → '{' stmt* '}'
@@ -38,15 +38,20 @@ import java.util.List;
  *   varDecl    → type IDENTIFIER ('=' expr)? ';'
  *   expression → assignment → logicOr → logicAnd → equality
  *              → comparison → term → factor → unary → call → primary
+ *   call       → primary ('++'|'--')? ('[' expression ']')* ('(' args? ')')?
+ *   primary    → NUMBER | STRING_LITERAL | true | false | null | IDENTIFIER
+ *              | '(' expression ')'
+ *              | '{' (expression (',' expression)*)? '}'   (ArrayLiteral)
+ *              | NEW type '[' expression ']'               (NewArray)
  */
-public class Parser {
+public class SintaticAnalyzer {
 
     private final List<Token> tokens; // lista de tokens recebida do Lexer
     private int current = 0;          // índice do próximo token a ser lido
     private final List<CompilerError> errors = new ArrayList<>();
     private final SymbolTable symbolTable = new SymbolTable();
 
-    public Parser(List<Token> tokens) {
+    public SintaticAnalyzer(List<Token> tokens) {
         this.tokens = tokens;
     }
 
@@ -280,7 +285,11 @@ public class Parser {
     }
 
     /*
-     * isSupportedType() — tipos de dados que a linguagem suporta em variáveis e parâmetros.
+     * isSupportedType() — verifica se um tipo de dado é suportado pela linguagem.
+     *
+     * Tipos suportados: int, double, boolean, String.
+     * Usado para validar: tipos de variáveis, tipos de parâmetros, tipos de
+     * retorno de métodos e o tipo após 'new' em alocação de arrays.
      */
     private boolean isSupportedType(TokenType type) {
         return type == TokenType.INT || type == TokenType.DOUBLE
@@ -595,13 +604,40 @@ public class Parser {
     }
 
     /*
-     * call() — parseia uma chamada de método simples: nome(args)
+     * call() — parseia operadores pós-fixos, acesso a array e chamadas de método.
      *
-     * Primeiro parseia uma expressão primária. Se o próximo token for '(',
-     * trata como chamada de método. Os argumentos são separados por vírgulas.
+     * Após parsear uma expressão primária, verifica em sequência:
+     *
+     *   1. Pós-fixo (x++ ou i--): apenas sobre variáveis. Cria Expr.Postfix.
+     *
+     *   2. Acesso a array (nomes[x]): aceita qualquer expressão seguida de '['.
+     *      Permite encadeamento: matriz[i][j] vira ArrayAccess(ArrayAccess(...)).
+     *
+     *   3. Chamada de método (soma(a, b)): apenas sobre variáveis. Cria Expr.Call.
+     *
+     * A ordem importa: pós-fixo é verificado primeiro para que "arr[0]++"
+     * seja tratado corretamente (pós-fixo sobre o ArrayAccess, não ao contrário).
      */
     private Expr call() {
         Expr expr = primary();
+
+        // Pós-fixo: x++ ou i-- (só válido sobre variáveis)
+        if (expr instanceof Expr.Variable && match(TokenType.INCREMENT, TokenType.DECREMENT)) {
+            Token op      = previous();
+            Token operand = ((Expr.Variable) expr).name;
+            return new Expr.Postfix(operand, op);
+        }
+
+        // Acesso a elemento de array: nomes[x]
+        // Pode encadear: matriz[i][j]
+        while (check(TokenType.LBRACKET)) {
+            Token bracket = advance(); // consome '['
+            Expr index = expression();
+            consume(TokenType.RBRACKET, "Esperado ']' após índice do array");
+            expr = new Expr.ArrayAccess(expr, index, bracket);
+        }
+
+        // Chamada de método: nome(args)
         if (expr instanceof Expr.Variable && match(TokenType.LPAREN)) {
             Token callee = ((Expr.Variable) expr).name;
             List<Expr> args = new ArrayList<>();
@@ -617,12 +653,14 @@ public class Parser {
     /*
      * primary() — parseia os átomos das expressões (valores e agrupamentos).
      *
-     * Este é o nível de maior precedência. Trata:
-     *   - Literais: números, strings, true, false
+     * Este é o nível de maior precedência. Reconhece:
+     *   - Literais: números, strings, true, false, null
      *   - Identificadores: nomes de variáveis
-     *   - Expressões agrupadas entre parênteses: (expr)
+     *   - Expressões entre parênteses: (expr)
+     *   - Inicializador de array: {"Ana", "Carlos"}  → Expr.ArrayLiteral
+     *   - Alocação de array:  new String[3]          → Expr.NewArray
      *
-     * Se nenhum desses for reconhecido, lança ParseError.
+     * Se nenhum desses for reconhecido, lança ParseError com o token atual.
      */
     private Expr primary() {
         if (match(TokenType.NUMBER)) {
@@ -639,8 +677,19 @@ public class Parser {
         if (match(TokenType.FALSE)) {
             return new Expr.Literal(Boolean.FALSE, previous()); // literal false
         }
+        if (match(TokenType.NULL)) {
+            return new Expr.Literal(null, previous()); // literal null
+        }
         if (match(TokenType.IDENTIFIER)) {
             return new Expr.Variable(previous()); // referência a variável
+        }
+        // Alocação de array: new String[3], new int[n]
+        if (check(TokenType.NEW)) {
+            return newArray();
+        }
+        // Inicializador de array: {"Ana", "Carlos", "Lucas"}
+        if (check(TokenType.LBRACE)) {
+            return arrayLiteral();
         }
         if (match(TokenType.LPAREN)) {
             Expr expr = expression(); // parseia a expressão interna
@@ -650,9 +699,47 @@ public class Parser {
         throw error(peek(), "Esperado expressão, mas encontrou '" + peek().lexeme + "'");
     }
 
+    /*
+     * arrayLiteral() — parseia um inicializador de array entre chaves.
+     *
+     * Regra: '{' (expression (',' expression)*)? '}'
+     * Exemplo: {"Ana", "Carlos", "Lucas"}  ou  {1, 2, 3}  ou  {}
+     */
+    private Expr arrayLiteral() {
+        Token brace = consume(TokenType.LBRACE, "Esperado '{'");
+        List<Expr> elements = new ArrayList<>();
+        if (!check(TokenType.RBRACE)) {
+            do {
+                elements.add(expression());
+            } while (match(TokenType.COMMA));
+        }
+        consume(TokenType.RBRACE, "Esperado '}' após elementos do array");
+        return new Expr.ArrayLiteral(elements, brace);
+    }
+
     // =========================================================================
     // Helpers de consumo de tokens
     // =========================================================================
+
+    /*
+     * newArray() — parseia uma alocação de array com 'new'.
+     *
+     * Regra: NEW type '[' expression ']'
+     * Exemplo: new String[3]  ou  new int[n + 1]
+     */
+    private Expr newArray() {
+        Token keyword = consume(TokenType.NEW, "Esperado 'new'");
+        if (!isSupportedType(peek().type)) {
+            throw error(peek(),
+                    "Esperado tipo após 'new' (int, double, boolean ou String), mas encontrou '"
+                    + peek().lexeme + "'");
+        }
+        String elementType = advance().lexeme.toUpperCase(); // consome o tipo
+        consume(TokenType.LBRACKET, "Esperado '[' após tipo em 'new'");
+        Expr size = expression();
+        consume(TokenType.RBRACKET, "Esperado ']' após tamanho do array");
+        return new Expr.NewArray(elementType, size, keyword);
+    }
 
     /*
      * consume() — exige que o próximo token seja de um tipo específico.
@@ -729,7 +816,10 @@ public class Parser {
     private Token peek()     { return tokens.get(current); }
 
     // Retorna o token que acabou de ser consumido (o anterior ao atual).
-    private Token previous() { return tokens.get(current - 1); }
+    // Retorna o próprio token atual se ainda não consumiu nenhum (current == 0).
+    private Token previous() {
+        return tokens.get(current > 0 ? current - 1 : 0);
+    }
 
     // Verifica se chegou ao fim da lista de tokens (token EOF).
     private boolean isAtEnd(){ return peek().type == TokenType.EOF; }

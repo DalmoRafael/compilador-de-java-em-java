@@ -18,9 +18,15 @@ import java.util.Map;
  * Regras verificadas:
  *   1. Variável não declarada: uso de "x" sem "int x" antes
  *   2. Declaração duplicada: "int x = 5; int x = 10;" no mesmo bloco
- *   3. Tipos incompatíveis: "int x = "texto";" (STRING em variável INT)
+ *   3. Tipos incompatíveis em atribuição: "int x = "texto";" (STRING → INT)
  *   4. Return com valor em método void: método void não pode retornar valor
  *   5. Tipo de retorno incompatível: método int retornando uma String
+ *   6. Condição não-boolean em if/while: "if (x)" quando x é INT ou DOUBLE
+ *   7. Operação aritmética com tipo não-numérico: "10 - "texto"" é erro
+ *      (exceção: "texto" + qualquer coisa é concatenação, sempre válida)
+ *   8. Pós-fixo (++/--) em variável não-numérica: "flag++" em BOOLEAN é erro
+ *   9. Índice de array não-INT: "nomes[3.14]" é erro
+ *  10. Tamanho inválido em new: "new String[3.14]" é erro (deve ser INT)
  *
  * Além de verificar, o analisador também vincula cada uso de variável ao
  * seu símbolo na tabela: preenche token.symbolId para cada referência a
@@ -34,7 +40,7 @@ import java.util.Map;
  *
  * Inferência de tipos:
  *   analyzeExpr() retorna o tipo da expressão (como String: "INT", "DOUBLE",
- *   "BOOLEAN", "STRING") ou null se não for possível inferir.
+ *   "BOOLEAN", "STRING", "STRING[]", etc.) ou null se não for possível inferir.
  */
 public class SemanticAnalyzer {
 
@@ -171,20 +177,36 @@ public class SemanticAnalyzer {
 
     /*
      * analyzeIf() — analisa um comando if/else.
-     * Analisa a condição e os dois ramos (o else pode ser null).
+     *
+     * Verifica que a condição seja do tipo BOOLEAN. Se não for (ex: "if (x)"
+     * onde x é INT), reporta um erro semântico com dica de como corrigir
+     * (ex: "use uma comparação, ex: x > 0"). Em seguida analisa os dois ramos.
      */
     private void analyzeIf(Stmt.If stmt) {
-        analyzeExpr(stmt.condition);
+        String condType = analyzeExpr(stmt.condition);
+        if (condType != null && !condType.equals("BOOLEAN")) {
+            addError(getConditionToken(stmt.condition),
+                    "Condição do 'if' deve ser boolean, mas é " + condType
+                    + " (use uma comparação, ex: " + exprSource(stmt.condition) + " > 0)");
+        }
         analyzeStmt(stmt.thenBranch);
-        analyzeStmt(stmt.elseBranch); // analyzeStmt trata null com segurança
+        analyzeStmt(stmt.elseBranch);
     }
 
     /*
      * analyzeWhile() — analisa um laço while.
-     * Analisa a condição e o corpo do laço.
+     *
+     * Verifica que a condição seja do tipo BOOLEAN. Se não for (ex: "while (x)"
+     * onde x é INT), reporta um erro semântico com dica de como corrigir
+     * (ex: "use uma comparação, ex: x > 0"). Em seguida analisa o corpo.
      */
     private void analyzeWhile(Stmt.While stmt) {
-        analyzeExpr(stmt.condition);
+        String condType = analyzeExpr(stmt.condition);
+        if (condType != null && !condType.equals("BOOLEAN")) {
+            addError(getConditionToken(stmt.condition),
+                    "Condição do 'while' deve ser boolean, mas é " + condType
+                    + " (use uma comparação, ex: " + exprSource(stmt.condition) + " > 0)");
+        }
         analyzeStmt(stmt.body);
     }
 
@@ -258,7 +280,11 @@ public class SemanticAnalyzer {
         if (expr instanceof Expr.Variable) return analyzeVariable((Expr.Variable) expr);
         if (expr instanceof Expr.Assign)   return analyzeAssign((Expr.Assign) expr);
         if (expr instanceof Expr.Binary)   return analyzeBinary((Expr.Binary) expr);
+        if (expr instanceof Expr.Postfix)  return analyzePostfix((Expr.Postfix) expr);
         if (expr instanceof Expr.Grouping) return analyzeExpr(((Expr.Grouping) expr).expression);
+        if (expr instanceof Expr.ArrayLiteral)  return analyzeArrayLiteral((Expr.ArrayLiteral) expr);
+        if (expr instanceof Expr.ArrayAccess)   return analyzeArrayAccess((Expr.ArrayAccess) expr);
+        if (expr instanceof Expr.NewArray)      return analyzeNewArray((Expr.NewArray) expr);
 
         if (expr instanceof Expr.Unary) {
             Expr.Unary un = (Expr.Unary) expr;
@@ -325,11 +351,96 @@ public class SemanticAnalyzer {
     }
 
     /*
+     * analyzePostfix() — analisa um operador de pós-fixo (x++ ou i--).
+     *
+     * Verifica se a variável foi declarada e se é do tipo INT ou DOUBLE
+     * (não faz sentido incrementar um boolean). O tipo retornado é o tipo
+     * da variável, pois o resultado da expressão é o valor original.
+     */
+    private String analyzePostfix(Expr.Postfix expr) {
+        Symbol sym = lookup(expr.operand.lexeme);
+        if (sym == null) {
+            addError(expr.operand,
+                    "Variável '" + expr.operand.lexeme + "' não foi declarada"
+                    + " (faltou o tipo? ex: int " + expr.operand.lexeme + ")");
+            return null;
+        }
+        expr.operand.symbolId = sym.id; // vincula ao símbolo
+        if (!sym.type.equals("INT") && !sym.type.equals("DOUBLE")) {
+            addError(expr.operator,
+                    "Operador '" + expr.operator.lexeme
+                    + "' só pode ser usado em variáveis numéricas (int ou double),"
+                    + " mas '" + expr.operand.lexeme + "' é " + sym.type);
+        }
+        return sym.type;
+    }
+
+    /*
+     * analyzeArrayLiteral() — analisa um inicializador de array {v1, v2, ...}.
+     *
+     * Analisa cada elemento para detectar erros dentro deles.
+     * Retorna o tipo com [] para indicar que é um array (ex: "STRING[]").
+     * Se o array estiver vazio, retorna null (tipo indeterminado).
+     */
+    private String analyzeArrayLiteral(Expr.ArrayLiteral expr) {
+        String elementType = null;
+        for (Expr element : expr.elements) {
+            String t = analyzeExpr(element);
+            if (elementType == null) elementType = t; // tipo inferido do primeiro elemento
+        }
+        return elementType != null ? elementType + "[]" : null;
+    }
+
+    /*
+     * analyzeArrayAccess() — analisa um acesso por índice: array[index].
+     *
+     * Verifica que o índice seja do tipo INT e que o array tenha sido declarado.
+     * Retorna o tipo base do array (ex: "STRING[]" → "STRING").
+     */
+    private String analyzeArrayAccess(Expr.ArrayAccess expr) {
+        String arrayType = analyzeExpr(expr.array);  // ex: "STRING[]"
+        String indexType = analyzeExpr(expr.index);
+
+        // O índice deve ser inteiro
+        if (indexType != null && !indexType.equals("INT")) {
+            addError(expr.bracket,
+                    "Índice do array deve ser INT, mas foi " + indexType);
+        }
+
+        // Retorna o tipo base: "STRING[]" → "STRING", null se desconhecido
+        if (arrayType != null && arrayType.endsWith("[]")) {
+            return arrayType.substring(0, arrayType.length() - 2);
+        }
+        return null;
+    }
+
+    /*
+     * analyzeNewArray() — analisa a alocação de array: new Tipo[tamanho].
+     *
+     * Verifica que o tamanho seja do tipo INT e retorna o tipo do array (ex: "STRING[]").
+     */
+    private String analyzeNewArray(Expr.NewArray expr) {
+        String sizeType = analyzeExpr(expr.size);
+        if (sizeType != null && !sizeType.equals("INT")) {
+            addError(expr.keyword,
+                    "Tamanho do array em 'new' deve ser INT, mas foi " + sizeType);
+        }
+        return expr.elementType + "[]"; // ex: "STRING[]", "INT[]"
+    }
+
+    /*
      * analyzeBinary() — analisa uma expressão binária e infere seu tipo.
      *
-     * Operadores de comparação (< <= > >= == !=) e lógicos (&& ||) sempre
-     * produzem BOOLEAN. Operadores aritméticos (+ - * / %) produzem DOUBLE
-     * se algum operando for DOUBLE (promoção automática), ou INT caso contrário.
+     * Comparações (< <= > >= == !=) e operadores lógicos (&& ||) sempre
+     * produzem BOOLEAN, independente dos tipos dos operandos.
+     *
+     * Para '+': se algum operando for STRING, é concatenação e o resultado
+     * é STRING. Isso reflete o comportamento do Java ("a" + 5 = "a5").
+     *
+     * Para '-', '*', '/', '%': ambos os operandos devem ser numéricos
+     * (INT ou DOUBLE). Se algum não for, reporta erro semântico.
+     * Se algum for DOUBLE, o resultado é DOUBLE (promoção automática);
+     * caso contrário, o resultado é INT.
      */
     private String analyzeBinary(Expr.Binary expr) {
         String leftType  = analyzeExpr(expr.left);
@@ -343,9 +454,24 @@ public class SemanticAnalyzer {
             return "BOOLEAN";
         }
 
-        // Concatenação: "texto" + qualquer coisa resulta em STRING
+        // Concatenação: "texto" + qualquer coisa resulta em STRING (como em Java)
         if (op.equals("+") && ("STRING".equals(leftType) || "STRING".equals(rightType))) {
             return "STRING";
+        }
+
+        // Operadores aritméticos (-, *, /, %): os dois lados devem ser numéricos.
+        // Para +, já foi tratado o caso de concatenação acima.
+        if (!op.equals("+")) {
+            if (leftType != null && !isNumeric(leftType)) {
+                addError(expr.operator,
+                        "Operador '" + op + "' não pode ser aplicado a " + leftType
+                        + " — esperado int ou double");
+            }
+            if (rightType != null && !isNumeric(rightType)) {
+                addError(expr.operator,
+                        "Operador '" + op + "' não pode ser aplicado a " + rightType
+                        + " — esperado int ou double");
+            }
         }
 
         // Aritméticos: DOUBLE se algum operando for DOUBLE (widening), senão INT
@@ -382,6 +508,11 @@ public class SemanticAnalyzer {
         if (varType == null || valueType == null) return true; // dúvida → não reporta erro
         if (varType.equals(valueType)) return true;            // mesmo tipo
         return varType.equals("DOUBLE") && valueType.equals("INT"); // widening INT → DOUBLE
+    }
+
+    // Retorna true se o tipo é numérico (pode ser usado em operações aritméticas).
+    private boolean isNumeric(String type) {
+        return type.equals("INT") || type.equals("DOUBLE");
     }
 
     // =========================================================================
@@ -428,5 +559,27 @@ public class SemanticAnalyzer {
     private void addError(Token token, String message) {
         errors.add(new CompilerError(token.line, token.column, message,
                 CompilerError.ErrorType.SEMANTIC));
+    }
+
+    /*
+     * getConditionToken() — retorna o token mais representativo de uma expressão,
+     * usado para apontar a posição do erro quando a condição tem tipo errado.
+     */
+    private Token getConditionToken(Expr expr) {
+        if (expr instanceof Expr.Variable) return ((Expr.Variable) expr).name;
+        if (expr instanceof Expr.Literal)  return ((Expr.Literal) expr).token;
+        if (expr instanceof Expr.Binary)   return ((Expr.Binary) expr).operator;
+        if (expr instanceof Expr.Unary)    return ((Expr.Unary) expr).operator;
+        if (expr instanceof Expr.Assign)   return ((Expr.Assign) expr).name;
+        return null; // fallback: sem posição definida
+    }
+
+    /*
+     * exprSource() — retorna uma representação textual simples de uma expressão,
+     * usada na dica da mensagem de erro (ex: "numero > 0").
+     */
+    private String exprSource(Expr expr) {
+        if (expr instanceof Expr.Variable) return ((Expr.Variable) expr).name.lexeme;
+        return expr.toString();
     }
 }
