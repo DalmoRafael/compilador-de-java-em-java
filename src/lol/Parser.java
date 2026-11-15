@@ -739,7 +739,10 @@ public class Parser {
     private Token peek()     { return tokens.get(current); }
 
     // Retorna o token que acabou de ser consumido (o anterior ao atual).
-    private Token previous() { return tokens.get(current - 1); }
+    // Retorna o próprio token atual se ainda não consumiu nenhum (current == 0).
+    private Token previous() {
+        return tokens.get(current > 0 ? current - 1 : 0);
+    }
 
     // Verifica se chegou ao fim da lista de tokens (token EOF).
     private boolean isAtEnd(){ return peek().type == TokenType.EOF; }
