@@ -63,15 +63,11 @@ public class Main {
             fileName = args[0];
         } else {
             source = """
-                    public class Main {
-                        public static void main(String[] args) {
-                            int numero = 10;
-                    
-                            if (numero) {
-                                System.out.println("Teste");
-                            }
-                        }
-                    }
+            public class Main {
+              public static void main(String[] args) {
+                int resultado = 10 - 5;
+              }
+            }
             """;
         }
 

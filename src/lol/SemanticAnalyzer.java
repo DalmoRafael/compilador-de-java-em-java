@@ -435,9 +435,24 @@ public class SemanticAnalyzer {
             return "BOOLEAN";
         }
 
-        // Concatenação: "texto" + qualquer coisa resulta em STRING
+        // Concatenação: "texto" + qualquer coisa resulta em STRING (como em Java)
         if (op.equals("+") && ("STRING".equals(leftType) || "STRING".equals(rightType))) {
             return "STRING";
+        }
+
+        // Operadores aritméticos (-, *, /, %): os dois lados devem ser numéricos.
+        // Para +, já foi tratado o caso de concatenação acima.
+        if (!op.equals("+")) {
+            if (leftType != null && !isNumeric(leftType)) {
+                addError(expr.operator,
+                        "Operador '" + op + "' não pode ser aplicado a " + leftType
+                        + " — esperado int ou double");
+            }
+            if (rightType != null && !isNumeric(rightType)) {
+                addError(expr.operator,
+                        "Operador '" + op + "' não pode ser aplicado a " + rightType
+                        + " — esperado int ou double");
+            }
         }
 
         // Aritméticos: DOUBLE se algum operando for DOUBLE (widening), senão INT
@@ -474,6 +489,11 @@ public class SemanticAnalyzer {
         if (varType == null || valueType == null) return true; // dúvida → não reporta erro
         if (varType.equals(valueType)) return true;            // mesmo tipo
         return varType.equals("DOUBLE") && valueType.equals("INT"); // widening INT → DOUBLE
+    }
+
+    // Retorna true se o tipo é numérico (pode ser usado em operações aritméticas).
+    private boolean isNumeric(String type) {
+        return type.equals("INT") || type.equals("DOUBLE");
     }
 
     // =========================================================================
