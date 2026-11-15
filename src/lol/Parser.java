@@ -596,12 +596,22 @@ public class Parser {
 
     /*
      * call() — parseia uma chamada de método simples: nome(args)
+     * Também captura operadores de pós-fixo: x++ e i--
      *
      * Primeiro parseia uma expressão primária. Se o próximo token for '(',
-     * trata como chamada de método. Os argumentos são separados por vírgulas.
+     * trata como chamada de método. Se for '++' ou '--', cria um Postfix.
      */
     private Expr call() {
         Expr expr = primary();
+
+        // Pós-fixo: x++ ou i-- (só válido sobre variáveis)
+        if (expr instanceof Expr.Variable && match(TokenType.INCREMENT, TokenType.DECREMENT)) {
+            Token op      = previous();
+            Token operand = ((Expr.Variable) expr).name;
+            return new Expr.Postfix(operand, op);
+        }
+
+        // Chamada de método: nome(args)
         if (expr instanceof Expr.Variable && match(TokenType.LPAREN)) {
             Token callee = ((Expr.Variable) expr).name;
             List<Expr> args = new ArrayList<>();

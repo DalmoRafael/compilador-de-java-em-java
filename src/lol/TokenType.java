@@ -59,6 +59,7 @@ public enum TokenType {
 
     // --- Operadores ---
     PLUS, MINUS, STAR, SLASH, PERCENT,  // aritméticos:   + - * / %
+    INCREMENT, DECREMENT,               // incremento/decremento: ++ --
     ASSIGN,                             // atribuição:     =
     EQUALS, NOT_EQUALS,                 // igualdade:      == !=
     LESS, LESS_EQUAL,                   // comparação:     < <=

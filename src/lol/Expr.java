@@ -164,6 +164,33 @@ public abstract class Expr {
     }
 
     /*
+     * Postfix — operador de pós-fixo aplicado após uma variável.
+     *
+     * Exemplos: x++, i--
+     *
+     * O operador age DEPOIS de a expressão ser avaliada. Ou seja, o valor
+     * atual de x é usado primeiro e depois ele é incrementado/decrementado.
+     * É equivalente a:  x = x + 1  (para ++)  ou  x = x - 1  (para --)
+     *
+     *   operand  → a variável sobre a qual o operador age (ex: token "x")
+     *   operator → token do operador (++ ou --)
+     */
+    public static class Postfix extends Expr {
+        public final Token operand;  // a variável sendo incrementada/decrementada
+        public final Token operator; // token ++ ou --
+
+        public Postfix(Token operand, Token operator) {
+            this.operand  = operand;
+            this.operator = operator;
+        }
+
+        @Override
+        public String toString() {
+            return operand.lexeme + operator.lexeme;
+        }
+    }
+
+    /*
      * Call — chamada de método.
      *
      * Exemplo: soma(a, b)

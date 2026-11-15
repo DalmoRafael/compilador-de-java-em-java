@@ -258,6 +258,7 @@ public class SemanticAnalyzer {
         if (expr instanceof Expr.Variable) return analyzeVariable((Expr.Variable) expr);
         if (expr instanceof Expr.Assign)   return analyzeAssign((Expr.Assign) expr);
         if (expr instanceof Expr.Binary)   return analyzeBinary((Expr.Binary) expr);
+        if (expr instanceof Expr.Postfix)  return analyzePostfix((Expr.Postfix) expr);
         if (expr instanceof Expr.Grouping) return analyzeExpr(((Expr.Grouping) expr).expression);
 
         if (expr instanceof Expr.Unary) {
@@ -320,6 +321,31 @@ public class SemanticAnalyzer {
             addError(expr.name,
                     "Tipos incompatíveis: não pode atribuir " + valueType
                     + " a variável '" + expr.name.lexeme + "' do tipo " + sym.type);
+        }
+        return sym.type;
+    }
+
+    /*
+     * analyzePostfix() — analisa um operador de pós-fixo (x++ ou i--).
+     *
+     * Verifica se a variável foi declarada e se é do tipo INT ou DOUBLE
+     * (não faz sentido incrementar um boolean). O tipo retornado é o tipo
+     * da variável, pois o resultado da expressão é o valor original.
+     */
+    private String analyzePostfix(Expr.Postfix expr) {
+        Symbol sym = lookup(expr.operand.lexeme);
+        if (sym == null) {
+            addError(expr.operand,
+                    "Variável '" + expr.operand.lexeme + "' não foi declarada"
+                    + " (faltou o tipo? ex: int " + expr.operand.lexeme + ")");
+            return null;
+        }
+        expr.operand.symbolId = sym.id; // vincula ao símbolo
+        if (!sym.type.equals("INT") && !sym.type.equals("DOUBLE")) {
+            addError(expr.operator,
+                    "Operador '" + expr.operator.lexeme
+                    + "' só pode ser usado em variáveis numéricas (int ou double),"
+                    + " mas '" + expr.operand.lexeme + "' é " + sym.type);
         }
         return sym.type;
     }
