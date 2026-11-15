@@ -171,20 +171,30 @@ public class SemanticAnalyzer {
 
     /*
      * analyzeIf() — analisa um comando if/else.
-     * Analisa a condição e os dois ramos (o else pode ser null).
+     * Verifica que a condição seja do tipo BOOLEAN.
      */
     private void analyzeIf(Stmt.If stmt) {
-        analyzeExpr(stmt.condition);
+        String condType = analyzeExpr(stmt.condition);
+        if (condType != null && !condType.equals("BOOLEAN")) {
+            addError(getConditionToken(stmt.condition),
+                    "Condição do 'if' deve ser boolean, mas é " + condType
+                    + " (use uma comparação, ex: " + exprSource(stmt.condition) + " > 0)");
+        }
         analyzeStmt(stmt.thenBranch);
-        analyzeStmt(stmt.elseBranch); // analyzeStmt trata null com segurança
+        analyzeStmt(stmt.elseBranch);
     }
 
     /*
      * analyzeWhile() — analisa um laço while.
-     * Analisa a condição e o corpo do laço.
+     * Verifica que a condição seja do tipo BOOLEAN.
      */
     private void analyzeWhile(Stmt.While stmt) {
-        analyzeExpr(stmt.condition);
+        String condType = analyzeExpr(stmt.condition);
+        if (condType != null && !condType.equals("BOOLEAN")) {
+            addError(getConditionToken(stmt.condition),
+                    "Condição do 'while' deve ser boolean, mas é " + condType
+                    + " (use uma comparação, ex: " + exprSource(stmt.condition) + " > 0)");
+        }
         analyzeStmt(stmt.body);
     }
 
@@ -510,5 +520,27 @@ public class SemanticAnalyzer {
     private void addError(Token token, String message) {
         errors.add(new CompilerError(token.line, token.column, message,
                 CompilerError.ErrorType.SEMANTIC));
+    }
+
+    /*
+     * getConditionToken() — retorna o token mais representativo de uma expressão,
+     * usado para apontar a posição do erro quando a condição tem tipo errado.
+     */
+    private Token getConditionToken(Expr expr) {
+        if (expr instanceof Expr.Variable) return ((Expr.Variable) expr).name;
+        if (expr instanceof Expr.Literal)  return ((Expr.Literal) expr).token;
+        if (expr instanceof Expr.Binary)   return ((Expr.Binary) expr).operator;
+        if (expr instanceof Expr.Unary)    return ((Expr.Unary) expr).operator;
+        if (expr instanceof Expr.Assign)   return ((Expr.Assign) expr).name;
+        return null; // fallback: sem posição definida
+    }
+
+    /*
+     * exprSource() — retorna uma representação textual simples de uma expressão,
+     * usada na dica da mensagem de erro (ex: "numero > 0").
+     */
+    private String exprSource(Expr expr) {
+        if (expr instanceof Expr.Variable) return ((Expr.Variable) expr).name.lexeme;
+        return expr.toString();
     }
 }

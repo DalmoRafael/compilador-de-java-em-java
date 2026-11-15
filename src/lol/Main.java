@@ -63,19 +63,15 @@ public class Main {
             fileName = args[0];
         } else {
             source = """
-            public class Teste {
-                public static void main(String[] args) {
-                    String[] nomes = {"Ana", "Carlos", "Lucas"};
-                    String[] nomess = new String[3];
-                    for (int x = 0; x < 3; x++) {
-                        System.out.println(nomes[x]);
+                    public class Main {
+                        public static void main(String[] args) {
+                            int numero = 10;
+                    
+                            if (numero) {
+                                System.out.println("Teste");
+                            }
+                        }
                     }
-
-                    for (int i = 100; i > 0; i--) {
-                        System.out.println(i);
-                    }
-                }
-            }
             """;
         }
 
