@@ -18,9 +18,15 @@ import java.util.Map;
  * Regras verificadas:
  *   1. Variável não declarada: uso de "x" sem "int x" antes
  *   2. Declaração duplicada: "int x = 5; int x = 10;" no mesmo bloco
- *   3. Tipos incompatíveis: "int x = "texto";" (STRING em variável INT)
+ *   3. Tipos incompatíveis em atribuição: "int x = "texto";" (STRING → INT)
  *   4. Return com valor em método void: método void não pode retornar valor
  *   5. Tipo de retorno incompatível: método int retornando uma String
+ *   6. Condição não-boolean em if/while: "if (x)" quando x é INT ou DOUBLE
+ *   7. Operação aritmética com tipo não-numérico: "10 - "texto"" é erro
+ *      (exceção: "texto" + qualquer coisa é concatenação, sempre válida)
+ *   8. Pós-fixo (++/--) em variável não-numérica: "flag++" em BOOLEAN é erro
+ *   9. Índice de array não-INT: "nomes[3.14]" é erro
+ *  10. Tamanho inválido em new: "new String[3.14]" é erro (deve ser INT)
  *
  * Além de verificar, o analisador também vincula cada uso de variável ao
  * seu símbolo na tabela: preenche token.symbolId para cada referência a
@@ -34,7 +40,7 @@ import java.util.Map;
  *
  * Inferência de tipos:
  *   analyzeExpr() retorna o tipo da expressão (como String: "INT", "DOUBLE",
- *   "BOOLEAN", "STRING") ou null se não for possível inferir.
+ *   "BOOLEAN", "STRING", "STRING[]", etc.) ou null se não for possível inferir.
  */
 public class SemanticAnalyzer {
 
@@ -171,7 +177,10 @@ public class SemanticAnalyzer {
 
     /*
      * analyzeIf() — analisa um comando if/else.
-     * Verifica que a condição seja do tipo BOOLEAN.
+     *
+     * Verifica que a condição seja do tipo BOOLEAN. Se não for (ex: "if (x)"
+     * onde x é INT), reporta um erro semântico com dica de como corrigir
+     * (ex: "use uma comparação, ex: x > 0"). Em seguida analisa os dois ramos.
      */
     private void analyzeIf(Stmt.If stmt) {
         String condType = analyzeExpr(stmt.condition);
@@ -186,7 +195,10 @@ public class SemanticAnalyzer {
 
     /*
      * analyzeWhile() — analisa um laço while.
-     * Verifica que a condição seja do tipo BOOLEAN.
+     *
+     * Verifica que a condição seja do tipo BOOLEAN. Se não for (ex: "while (x)"
+     * onde x é INT), reporta um erro semântico com dica de como corrigir
+     * (ex: "use uma comparação, ex: x > 0"). Em seguida analisa o corpo.
      */
     private void analyzeWhile(Stmt.While stmt) {
         String condType = analyzeExpr(stmt.condition);
@@ -419,9 +431,16 @@ public class SemanticAnalyzer {
     /*
      * analyzeBinary() — analisa uma expressão binária e infere seu tipo.
      *
-     * Operadores de comparação (< <= > >= == !=) e lógicos (&& ||) sempre
-     * produzem BOOLEAN. Operadores aritméticos (+ - * / %) produzem DOUBLE
-     * se algum operando for DOUBLE (promoção automática), ou INT caso contrário.
+     * Comparações (< <= > >= == !=) e operadores lógicos (&& ||) sempre
+     * produzem BOOLEAN, independente dos tipos dos operandos.
+     *
+     * Para '+': se algum operando for STRING, é concatenação e o resultado
+     * é STRING. Isso reflete o comportamento do Java ("a" + 5 = "a5").
+     *
+     * Para '-', '*', '/', '%': ambos os operandos devem ser numéricos
+     * (INT ou DOUBLE). Se algum não for, reporta erro semântico.
+     * Se algum for DOUBLE, o resultado é DOUBLE (promoção automática);
+     * caso contrário, o resultado é INT.
      */
     private String analyzeBinary(Expr.Binary expr) {
         String leftType  = analyzeExpr(expr.left);

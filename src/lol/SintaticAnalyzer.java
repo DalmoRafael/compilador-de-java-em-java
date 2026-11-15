@@ -29,7 +29,7 @@ import java.util.List;
  * Gramática suportada (simplificada):
  *   program    → classDecl*
  *   classDecl  → modifier* CLASS IDENTIFIER '{' methodDecl* '}'
- *   methodDecl → modifier* type IDENTIFIER '(' params? ')' block
+ *   methodDecl → modifier* (type | VOID) IDENTIFIER '(' params? ')' block
  *   params     → type IDENTIFIER (',' type IDENTIFIER)*
  *   type       → (INT | DOUBLE | BOOLEAN | STRING) ('[' ']')*
  *   block      → '{' stmt* '}'
@@ -38,6 +38,11 @@ import java.util.List;
  *   varDecl    → type IDENTIFIER ('=' expr)? ';'
  *   expression → assignment → logicOr → logicAnd → equality
  *              → comparison → term → factor → unary → call → primary
+ *   call       → primary ('++'|'--')? ('[' expression ']')* ('(' args? ')')?
+ *   primary    → NUMBER | STRING_LITERAL | true | false | null | IDENTIFIER
+ *              | '(' expression ')'
+ *              | '{' (expression (',' expression)*)? '}'   (ArrayLiteral)
+ *              | NEW type '[' expression ']'               (NewArray)
  */
 public class SintaticAnalyzer {
 
@@ -280,7 +285,11 @@ public class SintaticAnalyzer {
     }
 
     /*
-     * isSupportedType() — tipos de dados que a linguagem suporta em variáveis e parâmetros.
+     * isSupportedType() — verifica se um tipo de dado é suportado pela linguagem.
+     *
+     * Tipos suportados: int, double, boolean, String.
+     * Usado para validar: tipos de variáveis, tipos de parâmetros, tipos de
+     * retorno de métodos e o tipo após 'new' em alocação de arrays.
      */
     private boolean isSupportedType(TokenType type) {
         return type == TokenType.INT || type == TokenType.DOUBLE
@@ -595,11 +604,19 @@ public class SintaticAnalyzer {
     }
 
     /*
-     * call() — parseia uma chamada de método simples: nome(args)
-     * Também captura operadores de pós-fixo: x++ e i--
+     * call() — parseia operadores pós-fixos, acesso a array e chamadas de método.
      *
-     * Primeiro parseia uma expressão primária. Se o próximo token for '(',
-     * trata como chamada de método. Se for '++' ou '--', cria um Postfix.
+     * Após parsear uma expressão primária, verifica em sequência:
+     *
+     *   1. Pós-fixo (x++ ou i--): apenas sobre variáveis. Cria Expr.Postfix.
+     *
+     *   2. Acesso a array (nomes[x]): aceita qualquer expressão seguida de '['.
+     *      Permite encadeamento: matriz[i][j] vira ArrayAccess(ArrayAccess(...)).
+     *
+     *   3. Chamada de método (soma(a, b)): apenas sobre variáveis. Cria Expr.Call.
+     *
+     * A ordem importa: pós-fixo é verificado primeiro para que "arr[0]++"
+     * seja tratado corretamente (pós-fixo sobre o ArrayAccess, não ao contrário).
      */
     private Expr call() {
         Expr expr = primary();
@@ -636,12 +653,14 @@ public class SintaticAnalyzer {
     /*
      * primary() — parseia os átomos das expressões (valores e agrupamentos).
      *
-     * Este é o nível de maior precedência. Trata:
-     *   - Literais: números, strings, true, false
+     * Este é o nível de maior precedência. Reconhece:
+     *   - Literais: números, strings, true, false, null
      *   - Identificadores: nomes de variáveis
-     *   - Expressões agrupadas entre parênteses: (expr)
+     *   - Expressões entre parênteses: (expr)
+     *   - Inicializador de array: {"Ana", "Carlos"}  → Expr.ArrayLiteral
+     *   - Alocação de array:  new String[3]          → Expr.NewArray
      *
-     * Se nenhum desses for reconhecido, lança ParseError.
+     * Se nenhum desses for reconhecido, lança ParseError com o token atual.
      */
     private Expr primary() {
         if (match(TokenType.NUMBER)) {

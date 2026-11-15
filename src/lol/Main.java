@@ -64,9 +64,16 @@ public class Main {
         } else {
             source = """
             public class Main {
-              public static void main(String[] args) {
-                String resultado = "texto" - "texto";
-              }
+                public static void main(String[] args) {
+                    int[] numeros = {10, 20, 30};
+                    for (int i = 0; i < 3; i++) {
+                        System.out.println(numeros[i]);
+                    }
+                    String[] nomes = new String[3];
+                    int x = 5;
+                    int y = x * 2;
+                    System.out.println(y);
+                }
             }
             """;
         }
