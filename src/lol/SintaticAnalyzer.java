@@ -39,14 +39,14 @@ import java.util.List;
  *   expression → assignment → logicOr → logicAnd → equality
  *              → comparison → term → factor → unary → call → primary
  */
-public class Parser {
+public class SintaticAnalyzer {
 
     private final List<Token> tokens; // lista de tokens recebida do Lexer
     private int current = 0;          // índice do próximo token a ser lido
     private final List<CompilerError> errors = new ArrayList<>();
     private final SymbolTable symbolTable = new SymbolTable();
 
-    public Parser(List<Token> tokens) {
+    public SintaticAnalyzer(List<Token> tokens) {
         this.tokens = tokens;
     }
 

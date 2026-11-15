@@ -65,22 +65,13 @@ public class Main {
             source = """
             public class Teste {
                 public static void main(String[] args) {
-                    int x = 5;
-                    int y = 10;
-                    double media = 3.14;
-                    String nome = "lol";
-                    if (x < y) {
-                        System.out.println(x + y);
-                    } else {
-                        x = x - 1;
+                    for (int x = 0; x < 100; x++) {
+                        System.out.println(x);
                     }
-                    while (x > 0) {
-                        x = x - 1;
-                    }
-                }
 
-                static int soma(int a, int b) {
-                    return a + b;
+                    for (int i = 100; i > 0; i--) {
+                        System.out.println(i);
+                    }
                 }
             }
             """;
@@ -112,16 +103,16 @@ public class Main {
 
         // --- Fase 1: Análise léxica ---
         // O Lexer lê o texto e produz a lista de tokens.
-        Lexer lexer = new Lexer(source);
-        List<Token> tokens = lexer.scanTokens();
-        List<CompilerError> allErrors = new ArrayList<>(lexer.getErrors());
+        LexerAnalyzer lexerAnalyzer = new LexerAnalyzer(source);
+        List<Token> tokens = lexerAnalyzer.scanTokens();
+        List<CompilerError> allErrors = new ArrayList<>(lexerAnalyzer.getErrors());
 
         // --- Fase 2: Análise sintática ---
         // O Parser transforma os tokens em uma AST e popula a tabela de símbolos.
-        Parser parser = new Parser(tokens);
-        List<Stmt> ast = parser.parse();
-        allErrors.addAll(parser.getErrors());
-        SymbolTable symbolTable = parser.getSymbolTable();
+        SintaticAnalyzer sintaticAnalyzer = new SintaticAnalyzer(tokens);
+        List<Stmt> ast = sintaticAnalyzer.parse();
+        allErrors.addAll(sintaticAnalyzer.getErrors());
+        SymbolTable symbolTable = sintaticAnalyzer.getSymbolTable();
 
         // --- Fase 3: Análise semântica ---
         // O SemanticAnalyzer verifica regras de tipos, escopos e declarações.
