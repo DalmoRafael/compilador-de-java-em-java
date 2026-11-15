@@ -664,6 +664,10 @@ public class SintaticAnalyzer {
         if (match(TokenType.IDENTIFIER)) {
             return new Expr.Variable(previous()); // referência a variável
         }
+        // Alocação de array: new String[3], new int[n]
+        if (check(TokenType.NEW)) {
+            return newArray();
+        }
         // Inicializador de array: {"Ana", "Carlos", "Lucas"}
         if (check(TokenType.LBRACE)) {
             return arrayLiteral();
@@ -697,6 +701,26 @@ public class SintaticAnalyzer {
     // =========================================================================
     // Helpers de consumo de tokens
     // =========================================================================
+
+    /*
+     * newArray() — parseia uma alocação de array com 'new'.
+     *
+     * Regra: NEW type '[' expression ']'
+     * Exemplo: new String[3]  ou  new int[n + 1]
+     */
+    private Expr newArray() {
+        Token keyword = consume(TokenType.NEW, "Esperado 'new'");
+        if (!isSupportedType(peek().type)) {
+            throw error(peek(),
+                    "Esperado tipo após 'new' (int, double, boolean ou String), mas encontrou '"
+                    + peek().lexeme + "'");
+        }
+        String elementType = advance().lexeme.toUpperCase(); // consome o tipo
+        consume(TokenType.LBRACKET, "Esperado '[' após tipo em 'new'");
+        Expr size = expression();
+        consume(TokenType.RBRACKET, "Esperado ']' após tamanho do array");
+        return new Expr.NewArray(elementType, size, keyword);
+    }
 
     /*
      * consume() — exige que o próximo token seja de um tipo específico.

@@ -262,6 +262,7 @@ public class SemanticAnalyzer {
         if (expr instanceof Expr.Grouping) return analyzeExpr(((Expr.Grouping) expr).expression);
         if (expr instanceof Expr.ArrayLiteral)  return analyzeArrayLiteral((Expr.ArrayLiteral) expr);
         if (expr instanceof Expr.ArrayAccess)   return analyzeArrayAccess((Expr.ArrayAccess) expr);
+        if (expr instanceof Expr.NewArray)      return analyzeNewArray((Expr.NewArray) expr);
 
         if (expr instanceof Expr.Unary) {
             Expr.Unary un = (Expr.Unary) expr;
@@ -389,6 +390,20 @@ public class SemanticAnalyzer {
             return arrayType.substring(0, arrayType.length() - 2);
         }
         return null;
+    }
+
+    /*
+     * analyzeNewArray() — analisa a alocação de array: new Tipo[tamanho].
+     *
+     * Verifica que o tamanho seja do tipo INT e retorna o tipo do array (ex: "STRING[]").
+     */
+    private String analyzeNewArray(Expr.NewArray expr) {
+        String sizeType = analyzeExpr(expr.size);
+        if (sizeType != null && !sizeType.equals("INT")) {
+            addError(expr.keyword,
+                    "Tamanho do array em 'new' deve ser INT, mas foi " + sizeType);
+        }
+        return expr.elementType + "[]"; // ex: "STRING[]", "INT[]"
     }
 
     /*

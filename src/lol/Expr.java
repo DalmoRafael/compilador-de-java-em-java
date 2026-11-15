@@ -164,6 +164,35 @@ public abstract class Expr {
     }
 
     /*
+     * NewArray — alocação de array com 'new'.
+     *
+     * Exemplo: new String[3]  ou  new int[10]
+     *
+     * Aloca um array do tipo especificado com o tamanho dado.
+     * O array é inicializado com valores padrão (null para String, 0 para int).
+     *
+     *   elementType → nome do tipo do elemento em maiúsculas, ex: "STRING", "INT"
+     *   size        → expressão que determina o tamanho (ex: Literal(3), Variable(n))
+     *   keyword     → token 'new', guardado para posição em erros
+     */
+    public static class NewArray extends Expr {
+        public final String elementType;
+        public final Expr size;
+        public final Token keyword; // token 'new'
+
+        public NewArray(String elementType, Expr size, Token keyword) {
+            this.elementType = elementType;
+            this.size        = size;
+            this.keyword     = keyword;
+        }
+
+        @Override
+        public String toString() {
+            return "new " + elementType + "[" + size + "]";
+        }
+    }
+
+    /*
      * ArrayLiteral — inicializador de array com valores entre chaves.
      *
      * Exemplo: {"Ana", "Carlos", "Lucas"}
